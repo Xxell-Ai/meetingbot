@@ -1,0 +1,15 @@
+# Digital Ocean Configuration
+do_token = "your-digital-ocean-api-token"
+do_region = "nyc1"  # or sgp1, lon1, fra1, etc.
+
+# Application Configuration
+domain_name = "your-domain.com"
+
+# GitHub Authentication
+auth_github_id     = "your-github-oauth-app-id"
+auth_github_secret = "your-github-oauth-app-secret"
+github_token       = "your-github-personal-access-token"
+
+# Kubernetes Configuration
+cluster_node_size  = "s-2vcpu-4gb"  # or s-1vcpu-1gb, s-4vcpu-8gb, etc.
+cluster_node_count = 2
