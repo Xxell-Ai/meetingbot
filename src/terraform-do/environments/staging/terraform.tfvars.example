@@ -1,0 +1,52 @@
+# DigitalOcean Configuration
+do_token = "your-digitalocean-api-token"
+do_region = "nyc1"
+spaces_region = "nyc3"
+
+# Project Configuration
+project_name = "meetingbot"
+
+# Domain Configuration
+domain_name = "staging.your-domain.com"
+certificate_name = "staging-your-domain-com"
+
+# GitHub Authentication
+auth_github_id = "your-github-oauth-app-id"
+auth_github_secret = "your-github-oauth-app-secret"
+github_token = "your-github-personal-access-token"
+
+# Networking
+vpc_cidr = "10.10.0.0/24"
+
+# Database Configuration (medium for staging)
+postgres_version = "15"
+database_size = "db-s-1vcpu-2gb"
+database_node_count = 1
+
+# Kubernetes Configuration (more resources for staging)
+kubernetes_version = "1.29.1-do.0"
+kubernetes_auto_upgrade = true
+cluster_node_size = "s-2vcpu-2gb"
+cluster_node_count = 2
+enable_auto_scaling = true
+min_nodes = 1
+max_nodes = 3
+
+# Server Configuration (medium resources for staging)
+server_replicas = 2
+server_cpu_request = "100m"
+server_memory_request = "256Mi"
+server_cpu_limit = "500m"
+server_memory_limit = "512Mi"
+
+# Storage Configuration (moderate cleanup for staging)
+enable_storage_lifecycle = true
+storage_file_expiration_days = 60
+storage_noncurrent_version_expiration_days = 14
+
+# CDN Configuration (optional for staging)
+enable_cdn = false
+
+# DNS Configuration
+dns_ttl = 300
+create_www_record = false

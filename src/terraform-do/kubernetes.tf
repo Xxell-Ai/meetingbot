@@ -57,6 +57,8 @@ resource "kubernetes_deployment" "server" {
       }
 
       spec {
+        service_account_name = kubernetes_service_account.bot_manager.metadata[0].name
+        
         container {
           name  = "server"
           image = "ghcr.io/meetingbot/server:sha-${local.current_commit_sha_short}"
@@ -118,6 +120,11 @@ resource "kubernetes_deployment" "server" {
           env {
             name  = "DO_SPACES_ENDPOINT"
             value = "https://${digitalocean_spaces_bucket.this.region}.digitaloceanspaces.com"
+          }
+
+          env {
+            name  = "KUBE_NAMESPACE"
+            value = "default"
           }
 
           resources {

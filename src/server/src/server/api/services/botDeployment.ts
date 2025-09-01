@@ -66,6 +66,17 @@ export async function deployBot({
   botId: number;
   db: PostgresJsDatabase<typeof schema>;
 }) {
+  // KUBERNETES OVERRIDE: Check if we should use Kubernetes deployment instead
+  if (env.DEPLOYMENT_PLATFORM === "KUBERNETES") {
+    try {
+      const { deployBotKubernetes } = await import("./botDeploymentK8s");
+      return await deployBotKubernetes({ botId, db });
+    } catch (error) {
+      console.error("Kubernetes deployment failed, falling back to AWS ECS:", error);
+      // Fall through to AWS ECS deployment
+    }
+  }
+
   const botResult = await db.select().from(bots).where(eq(bots.id, botId));
   if (!botResult[0]) {
     throw new Error("Bot not found");

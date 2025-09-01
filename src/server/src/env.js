@@ -73,6 +73,15 @@ export const env = createEnv({
             z.array(z.string()),
           )
         : z.array(z.string()).default([]),
+    // DigitalOcean and Kubernetes configuration
+    DOMAIN_NAME: z.string().optional(),
+    DO_SPACES_BUCKET: z.string().optional(),
+    DO_SPACES_REGION: z.string().optional(), 
+    DO_SPACES_ENDPOINT: z.string().optional(),
+    KUBE_NAMESPACE: z.string().default("default"),
+    CURRENT_COMMIT_SHA: z.string().optional(),
+    // Deployment platform selection
+    DEPLOYMENT_PLATFORM: z.enum(["AWS_ECS", "KUBERNETES"]).default("AWS_ECS"),
   },
 
   /**
@@ -105,6 +114,14 @@ export const env = createEnv({
     ECS_CLUSTER_NAME: process.env.ECS_CLUSTER_NAME,
     ECS_SUBNETS: process.env.ECS_SUBNETS,
     ECS_SECURITY_GROUPS: process.env.ECS_SECURITY_GROUPS,
+    // DigitalOcean and Kubernetes runtime environment
+    DOMAIN_NAME: process.env.DOMAIN_NAME,
+    DO_SPACES_BUCKET: process.env.DO_SPACES_BUCKET,
+    DO_SPACES_REGION: process.env.DO_SPACES_REGION,
+    DO_SPACES_ENDPOINT: process.env.DO_SPACES_ENDPOINT,
+    KUBE_NAMESPACE: process.env.KUBE_NAMESPACE,
+    CURRENT_COMMIT_SHA: process.env.CURRENT_COMMIT_SHA,
+    DEPLOYMENT_PLATFORM: process.env.DEPLOYMENT_PLATFORM,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

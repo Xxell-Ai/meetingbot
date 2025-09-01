@@ -1,0 +1,67 @@
+# DigitalOcean Configuration
+do_token = "your-digitalocean-api-token"
+do_region = "nyc1"
+spaces_region = "nyc3"
+
+# Project Configuration
+project_name = "meetingbot"
+
+# Domain Configuration
+domain_name = "your-domain.com"
+certificate_name = "your-domain-com"
+
+# GitHub Authentication
+auth_github_id = "your-github-oauth-app-id"
+auth_github_secret = "your-github-oauth-app-secret"
+github_token = "your-github-personal-access-token"
+
+# Networking
+vpc_cidr = "10.10.0.0/24"
+
+# Database Configuration (high performance for production)
+postgres_version = "15"
+database_size = "db-s-2vcpu-4gb"
+database_node_count = 3
+
+# Kubernetes Configuration (high resources for production)
+kubernetes_version = "1.29.1-do.0"
+kubernetes_auto_upgrade = true
+cluster_node_size = "s-4vcpu-8gb"
+cluster_node_count = 3
+enable_auto_scaling = true
+min_nodes = 2
+max_nodes = 10
+
+# Server Configuration (high resources for production)
+server_replicas = 3
+server_cpu_request = "200m"
+server_memory_request = "512Mi"
+server_cpu_limit = "1000m"
+server_memory_limit = "1024Mi"
+
+# Storage Configuration (long retention for production)
+enable_storage_lifecycle = true
+storage_file_expiration_days = 365
+storage_noncurrent_version_expiration_days = 90
+
+# CDN Configuration (enabled for production)
+enable_cdn = true
+cdn_custom_domain = "cdn.your-domain.com"
+cdn_certificate_name = "cdn-your-domain-com"
+cdn_ttl = 3600
+
+# DNS Configuration
+dns_ttl = 300
+create_www_record = true
+
+# Additional subdomains for production
+subdomains = {
+  "api" = {
+    type  = "CNAME"
+    value = "@"
+  }
+  "cdn" = {
+    type  = "CNAME"
+    value = "@"
+  }
+}

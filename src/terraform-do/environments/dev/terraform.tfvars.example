@@ -1,0 +1,52 @@
+# DigitalOcean Configuration
+do_token = "your-digitalocean-api-token"
+do_region = "nyc1"
+spaces_region = "nyc3"
+
+# Project Configuration
+project_name = "meetingbot"
+
+# Domain Configuration
+domain_name = "dev.your-domain.com"
+certificate_name = "dev-your-domain-com"
+
+# GitHub Authentication
+auth_github_id = "your-github-oauth-app-id"
+auth_github_secret = "your-github-oauth-app-secret"
+github_token = "your-github-personal-access-token"
+
+# Networking
+vpc_cidr = "10.10.0.0/24"
+
+# Database Configuration (smaller for dev)
+postgres_version = "15"
+database_size = "db-s-1vcpu-1gb"
+database_node_count = 1
+
+# Kubernetes Configuration (minimal for dev)
+kubernetes_version = "1.29.1-do.0"
+kubernetes_auto_upgrade = true
+cluster_node_size = "s-1vcpu-1gb"
+cluster_node_count = 1
+enable_auto_scaling = false
+min_nodes = 1
+max_nodes = 2
+
+# Server Configuration (low resources for dev)
+server_replicas = 1
+server_cpu_request = "50m"
+server_memory_request = "128Mi"
+server_cpu_limit = "250m" 
+server_memory_limit = "256Mi"
+
+# Storage Configuration (aggressive cleanup for dev)
+enable_storage_lifecycle = true
+storage_file_expiration_days = 30
+storage_noncurrent_version_expiration_days = 7
+
+# CDN Configuration (disabled for dev)
+enable_cdn = false
+
+# DNS Configuration
+dns_ttl = 300
+create_www_record = false

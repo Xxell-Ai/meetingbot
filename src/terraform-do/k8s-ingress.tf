@@ -39,207 +39,52 @@ resource "kubernetes_ingress_v1" "server" {
   }
 }
 
-# Bot Jobs (one-off tasks equivalent to ECS tasks)
-resource "kubernetes_job" "meet_bot" {
-  count = 0 # Set to 1 when you need to run the bot
-
+# Kubernetes RBAC for the server to manage bot jobs
+resource "kubernetes_service_account" "bot_manager" {
+  depends_on = [digitalocean_kubernetes_cluster.this]
+  
   metadata {
-    name      = "${local.name}-meet-bot-${random_string.this.result}"
+    name      = "${local.name}-bot-manager"
     namespace = "default"
   }
-
-  spec {
-    template {
-      metadata {
-        labels = {
-          app = "${local.name}-meet-bot"
-        }
-      }
-
-      spec {
-        restart_policy = "Never"
-
-        container {
-          name  = "bot"
-          image = "ghcr.io/meetingbot/bots/meet:sha-${local.current_commit_sha_short}"
-
-          env {
-            name  = "BACKEND_URL"
-            value = "https://${var.domain_name}/api/trpc"
-          }
-
-          env {
-            name  = "DO_SPACES_BUCKET"
-            value = digitalocean_spaces_bucket.this.name
-          }
-
-          env {
-            name  = "DO_SPACES_REGION"
-            value = digitalocean_spaces_bucket.this.region
-          }
-
-          env {
-            name  = "DO_SPACES_ENDPOINT"
-            value = "https://${digitalocean_spaces_bucket.this.region}.digitaloceanspaces.com"
-          }
-
-          env {
-            name  = "NODE_ENV"
-            value = "production"
-          }
-
-          resources {
-            requests = {
-              cpu    = "2"
-              memory = "8Gi"
-            }
-            limits = {
-              cpu    = "4"
-              memory = "16Gi"
-            }
-          }
-        }
-      }
-    }
-
-    backoff_limit = 0
-  }
-
-  wait_for_completion = false
 }
 
-resource "kubernetes_job" "zoom_bot" {
-  count = 0 # Set to 1 when you need to run the bot
-
+resource "kubernetes_cluster_role" "bot_manager" {
+  depends_on = [digitalocean_kubernetes_cluster.this]
+  
   metadata {
-    name      = "${local.name}-zoom-bot-${random_string.this.result}"
-    namespace = "default"
+    name = "${local.name}-bot-manager"
   }
 
-  spec {
-    template {
-      metadata {
-        labels = {
-          app = "${local.name}-zoom-bot"
-        }
-      }
-
-      spec {
-        restart_policy = "Never"
-
-        container {
-          name  = "bot"
-          image = "ghcr.io/meetingbot/bots/zoom:sha-${local.current_commit_sha_short}"
-
-          env {
-            name  = "BACKEND_URL"
-            value = "https://${var.domain_name}/api/trpc"
-          }
-
-          env {
-            name  = "DO_SPACES_BUCKET"
-            value = digitalocean_spaces_bucket.this.name
-          }
-
-          env {
-            name  = "DO_SPACES_REGION"
-            value = digitalocean_spaces_bucket.this.region
-          }
-
-          env {
-            name  = "DO_SPACES_ENDPOINT"
-            value = "https://${digitalocean_spaces_bucket.this.region}.digitaloceanspaces.com"
-          }
-
-          env {
-            name  = "NODE_ENV"
-            value = "production"
-          }
-
-          resources {
-            requests = {
-              cpu    = "2"
-              memory = "8Gi"
-            }
-            limits = {
-              cpu    = "4"
-              memory = "16Gi"
-            }
-          }
-        }
-      }
-    }
-
-    backoff_limit = 0
+  rule {
+    api_groups = ["batch"]
+    resources  = ["jobs"]
+    verbs      = ["get", "list", "create", "update", "patch", "delete"]
   }
 
-  wait_for_completion = false
+  rule {
+    api_groups = [""]
+    resources  = ["pods"]
+    verbs      = ["get", "list"]
+  }
 }
 
-resource "kubernetes_job" "teams_bot" {
-  count = 0 # Set to 1 when you need to run the bot
-
+resource "kubernetes_cluster_role_binding" "bot_manager" {
+  depends_on = [digitalocean_kubernetes_cluster.this]
+  
   metadata {
-    name      = "${local.name}-teams-bot-${random_string.this.result}"
+    name = "${local.name}-bot-manager"
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role.bot_manager.metadata[0].name
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account.bot_manager.metadata[0].name
     namespace = "default"
   }
-
-  spec {
-    template {
-      metadata {
-        labels = {
-          app = "${local.name}-teams-bot"
-        }
-      }
-
-      spec {
-        restart_policy = "Never"
-
-        container {
-          name  = "bot"
-          image = "ghcr.io/meetingbot/bots/teams:sha-${local.current_commit_sha_short}"
-
-          env {
-            name  = "BACKEND_URL"
-            value = "https://${var.domain_name}/api/trpc"
-          }
-
-          env {
-            name  = "DO_SPACES_BUCKET"
-            value = digitalocean_spaces_bucket.this.name
-          }
-
-          env {
-            name  = "DO_SPACES_REGION"
-            value = digitalocean_spaces_bucket.this.region
-          }
-
-          env {
-            name  = "DO_SPACES_ENDPOINT"
-            value = "https://${digitalocean_spaces_bucket.this.region}.digitaloceanspaces.com"
-          }
-
-          env {
-            name  = "NODE_ENV"
-            value = "production"
-          }
-
-          resources {
-            requests = {
-              cpu    = "2"
-              memory = "8Gi"
-            }
-            limits = {
-              cpu    = "4"
-              memory = "16Gi"
-            }
-          }
-        }
-      }
-    }
-
-    backoff_limit = 0
-  }
-
-  wait_for_completion = false
 }
