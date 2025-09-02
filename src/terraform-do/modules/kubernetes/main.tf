@@ -1,3 +1,16 @@
+terraform {
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.0"
+    }
+  }
+}
+
 # Kubernetes Cluster
 resource "digitalocean_kubernetes_cluster" "this" {
   name         = var.name

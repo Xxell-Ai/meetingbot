@@ -15,16 +15,30 @@ terraform {
   }
 
   backend "s3" {
-    # Configure your backend here
-    # bucket = "your-terraform-state-bucket"
-    # key    = "meetingbot/dev/terraform.tfstate"
-    # region = "us-east-1"
-    # encrypt = true
+    endpoints = {
+      s3 = "https://sgp1.digitaloceanspaces.com"
+    }
+
+    bucket = "xxellbackup" # Your DO Spaces bucket
+    key    = "terraform/meetingbot/dev/terraform.tfstate"
+
+    # Deactivate a few AWS-specific checks
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    skip_region_validation      = true
+    skip_s3_checksum            = true
+    region                      = "us-east-1"
   }
 }
 
 provider "digitalocean" {
+  # Token can be set via TF_VAR_do_token or DIGITALOCEAN_TOKEN
   token = var.do_token
+  
+  # Spaces credentials can be set via TF_VAR variables or SPACES_ACCESS_KEY_ID/SPACES_SECRET_ACCESS_KEY
+  spaces_access_id  = var.do_spaces_access_id
+  spaces_secret_key = var.do_spaces_secret_key
 }
 
 provider "kubernetes" {
@@ -38,7 +52,7 @@ provider "kubernetes" {
 locals {
   environment = "dev"
   name        = "${var.project_name}-${local.environment}"
-  
+
   current_commit_sha_short = substr(
     trimspace(
       file("../../../../.git/${trimspace(trimprefix(file("../../../../.git/HEAD"), "ref:"))}")
@@ -94,9 +108,9 @@ module "database" {
   region      = var.do_region
   vpc_id      = module.networking.vpc_id
 
-  postgres_version     = var.postgres_version
-  database_size        = var.database_size
-  database_node_count  = var.database_node_count
+  postgres_version    = var.postgres_version
+  database_size       = var.database_size
+  database_node_count = var.database_node_count
 }
 
 # Storage module
@@ -108,41 +122,41 @@ module "storage" {
   random_suffix = random_string.suffix.result
   spaces_region = var.spaces_region
 
-  enable_lifecycle_policy              = var.enable_storage_lifecycle
-  file_expiration_days                 = var.storage_file_expiration_days
-  noncurrent_version_expiration_days   = var.storage_noncurrent_version_expiration_days
-  
-  enable_cdn            = var.enable_cdn
-  cdn_custom_domain     = var.cdn_custom_domain
-  cdn_certificate_name  = var.cdn_certificate_name
-  cdn_ttl               = var.cdn_ttl
+  enable_lifecycle_policy            = var.enable_storage_lifecycle
+  file_expiration_days               = var.storage_file_expiration_days
+  noncurrent_version_expiration_days = var.storage_noncurrent_version_expiration_days
+
+  enable_cdn           = var.enable_cdn
+  cdn_custom_domain    = var.cdn_custom_domain
+  cdn_certificate_name = var.cdn_certificate_name
+  cdn_ttl              = var.cdn_ttl
 }
 
 # Kubernetes module
 module "kubernetes" {
   source = "../../modules/kubernetes"
 
-  name                = local.name
-  environment         = local.environment
-  region              = var.do_region
-  vpc_id              = module.networking.vpc_id
-  domain_name         = var.domain_name
-  loadbalancer_name   = module.networking.loadbalancer_name
-  current_commit_sha  = local.current_commit_sha_short
+  name               = local.name
+  environment        = local.environment
+  region             = var.do_region
+  vpc_id             = module.networking.vpc_id
+  domain_name        = var.domain_name
+  loadbalancer_name  = module.networking.loadbalancer_name
+  current_commit_sha = local.current_commit_sha_short
 
-  kubernetes_version    = var.kubernetes_version
-  auto_upgrade         = var.kubernetes_auto_upgrade
-  cluster_node_size    = var.cluster_node_size
-  cluster_node_count   = var.cluster_node_count
-  enable_auto_scaling  = var.enable_auto_scaling
+  kubernetes_version  = var.kubernetes_version
+  auto_upgrade        = var.kubernetes_auto_upgrade
+  cluster_node_size   = var.cluster_node_size
+  cluster_node_count  = var.cluster_node_count
+  enable_auto_scaling = var.enable_auto_scaling
   min_nodes           = var.min_nodes
   max_nodes           = var.max_nodes
 
   server_replicas              = var.server_replicas
-  server_cpu_request          = var.server_cpu_request
-  server_memory_request       = var.server_memory_request
-  server_cpu_limit            = var.server_cpu_limit
-  server_memory_limit         = var.server_memory_limit
+  server_cpu_request           = var.server_cpu_request
+  server_memory_request        = var.server_memory_request
+  server_cpu_limit             = var.server_cpu_limit
+  server_memory_limit          = var.server_memory_limit
   server_environment_variables = local.server_environment_variables
 }
 
@@ -150,9 +164,8 @@ module "kubernetes" {
 module "dns" {
   source = "../../modules/dns"
 
-  domain_name      = var.domain_name
-  loadbalancer_ip  = module.networking.loadbalancer_ip
-  dns_ttl          = var.dns_ttl
+  domain_name       = var.domain_name
+  loadbalancer_ip   = module.networking.loadbalancer_ip
+  dns_ttl           = var.dns_ttl
   create_www_record = var.create_www_record
-  subdomains       = var.subdomains
 }

@@ -13,3 +13,7 @@ envBotData.ts
 
 **/.next/
 /src/bots/screenshot.png
+src/terraform-do/environments/dev/terraform.tfvars
+
+*.terraform.lock.hcl
+*.terraform/

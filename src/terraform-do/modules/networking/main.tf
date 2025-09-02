@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.0"
+    }
+  }
+}
+
 # VPC Module
 resource "digitalocean_vpc" "this" {
   name     = "${var.name}-vpc"

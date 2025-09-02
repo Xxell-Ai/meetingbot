@@ -1,15 +1,24 @@
+terraform {
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.0"
+    }
+  }
+}
+
 # Spaces bucket for bot data storage
 resource "digitalocean_spaces_bucket" "this" {
   name   = "${var.name}-${var.random_suffix}-bot-data"
   region = var.spaces_region
 
-  cors_rule {
-    allowed_headers = ["*"]
-    allowed_methods = ["PUT", "POST"]
-    allowed_origins = ["https://${var.domain_name}"]
-    expose_headers  = ["ETag"]
-    max_age_seconds = 3000
-  }
+  # cors_rule {
+  #   allowed_headers = ["*"]
+  #   allowed_methods = ["PUT", "POST"]
+  #   allowed_origins = ["https://${var.domain_name}"]
+  #   expose_headers  = ["ETag"]
+  #   max_age_seconds = 3000
+  # }
 
   lifecycle_rule {
     id      = "cleanup-incomplete-uploads"
@@ -29,6 +38,19 @@ resource "digitalocean_spaces_bucket" "this" {
     noncurrent_version_expiration {
       days = var.noncurrent_version_expiration_days
     }
+  }
+}
+
+resource "digitalocean_spaces_bucket_cors_configuration" "this" {
+  bucket = digitalocean_spaces_bucket.this.name
+  region = var.spaces_region
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["PUT", "POST"]
+    allowed_origins = ["https://${var.domain_name}"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
   }
 }
 

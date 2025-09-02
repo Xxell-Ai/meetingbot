@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.0"
+    }
+  }
+}
+
 # DNS Records for the domain
 resource "digitalocean_record" "this" {
   domain = var.domain_name

@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.0"
+    }
+  }
+}
+
 # Database Cluster
 resource "digitalocean_database_cluster" "this" {
   name       = "${var.name}-db"

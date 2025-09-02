@@ -18,6 +18,18 @@ variable "do_region" {
   default     = "nyc1"
 }
 
+variable "do_spaces_access_id" {
+  description = "DigitalOcean Spaces access key ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "do_spaces_secret_key" {
+  description = "DigitalOcean Spaces secret access key"
+  type        = string
+  sensitive   = true
+}
+
 variable "spaces_region" {
   description = "DigitalOcean Spaces region"
   type        = string
@@ -71,7 +83,7 @@ variable "postgres_version" {
 variable "database_size" {
   description = "Database cluster size"
   type        = string
-  default     = "db-s-1vcpu-1gb"  # Smallest for dev
+  default     = "db-s-1vcpu-1gb" # Smallest for dev
 }
 
 variable "database_node_count" {
@@ -96,19 +108,19 @@ variable "kubernetes_auto_upgrade" {
 variable "cluster_node_size" {
   description = "Kubernetes node size"
   type        = string
-  default     = "s-1vcpu-1gb"  # Smaller for dev
+  default     = "s-1vcpu-1gb" # Smaller for dev
 }
 
 variable "cluster_node_count" {
   description = "Number of Kubernetes nodes"
   type        = number
-  default     = 1  # Single node for dev
+  default     = 1 # Single node for dev
 }
 
 variable "enable_auto_scaling" {
   description = "Enable cluster auto-scaling"
   type        = bool
-  default     = false  # Disabled for dev
+  default     = false # Disabled for dev
 }
 
 variable "min_nodes" {
@@ -120,7 +132,7 @@ variable "min_nodes" {
 variable "max_nodes" {
   description = "Maximum number of nodes"
   type        = number
-  default     = 2  # Limited for dev
+  default     = 2 # Limited for dev
 }
 
 # Server Configuration
@@ -133,25 +145,25 @@ variable "server_replicas" {
 variable "server_cpu_request" {
   description = "Server CPU request"
   type        = string
-  default     = "50m"  # Lower for dev
+  default     = "50m" # Lower for dev
 }
 
 variable "server_memory_request" {
   description = "Server memory request"
   type        = string
-  default     = "128Mi"  # Lower for dev
+  default     = "128Mi" # Lower for dev
 }
 
 variable "server_cpu_limit" {
   description = "Server CPU limit"
   type        = string
-  default     = "250m"  # Lower for dev
+  default     = "250m" # Lower for dev
 }
 
 variable "server_memory_limit" {
   description = "Server memory limit"
   type        = string
-  default     = "256Mi"  # Lower for dev
+  default     = "256Mi" # Lower for dev
 }
 
 # Storage Configuration
@@ -164,20 +176,20 @@ variable "enable_storage_lifecycle" {
 variable "storage_file_expiration_days" {
   description = "Days after which files expire"
   type        = number
-  default     = 30  # Shorter for dev
+  default     = 30 # Shorter for dev
 }
 
 variable "storage_noncurrent_version_expiration_days" {
   description = "Days after which non-current versions expire"
   type        = number
-  default     = 7  # Shorter for dev
+  default     = 7 # Shorter for dev
 }
 
 # CDN Configuration
 variable "enable_cdn" {
   description = "Enable CDN"
   type        = bool
-  default     = false  # Disabled for dev
+  default     = false # Disabled for dev
 }
 
 variable "cdn_custom_domain" {
@@ -195,7 +207,7 @@ variable "cdn_certificate_name" {
 variable "cdn_ttl" {
   description = "CDN cache TTL"
   type        = number
-  default     = 300  # Shorter for dev
+  default     = 300 # Shorter for dev
 }
 
 # DNS Configuration
@@ -208,7 +220,7 @@ variable "dns_ttl" {
 variable "create_www_record" {
   description = "Create www CNAME record"
   type        = bool
-  default     = false  # Not needed for dev
+  default     = false # Not needed for dev
 }
 
 variable "subdomains" {
