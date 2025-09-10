@@ -7,6 +7,7 @@ export type MeetingInfo = {
   messageId?: string;
   threadId?: string;
   platform?: "zoom" | "teams" | "google";
+  externalMeetingId?: string;
 };
 
 export type AutomaticLeave = {

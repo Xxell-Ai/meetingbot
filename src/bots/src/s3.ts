@@ -4,47 +4,61 @@ import { Bot } from "./bot";
 import { randomUUID } from "crypto";
 
 /**
- * Creates an S3 Connection to the bucket.
+ * Creates an S3 Connection to the bucket (works with both AWS S3 and DigitalOcean Spaces).
  * 
+ * @param region AWS region or DO region
+ * @param accessKeyId Access key ID
+ * @param secretKey Secret access key
+ * @param endpoint Custom endpoint for DigitalOcean Spaces
  * @returns S3Client
  */
-export function createS3Client(region: string | undefined, accessKeyId: string | undefined, secretKey: string | undefined): S3Client|null {
+export function createS3Client(
+    region: string | undefined, 
+    accessKeyId: string | undefined, 
+    secretKey: string | undefined,
+    endpoint?: string
+): S3Client|null {
 
     try {
 
         if (!region)
             throw new Error("Region is required");
 
-        // Create an S3 client with credentials if they are provided
-        // Local Development requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
-        if (accessKeyId && secretKey) {
-            return new S3Client({
-                region,
-                credentials: {
-                    accessKeyId: accessKeyId,
-                    secretAccessKey: secretKey!,
-                },
-            });
+        const clientConfig: any = {
+            region,
+        };
 
-            // Production
-            // Credientials is not required on AWS, so we can use the default constructor.
-        } else {
-            return new S3Client({
-                region,
-            });
+        // Add custom endpoint for DigitalOcean Spaces
+        if (endpoint) {
+            clientConfig.endpoint = endpoint;
+            clientConfig.forcePathStyle = false; // Use virtual hosted-style for DO Spaces
         }
 
+        // Create an S3 client with credentials if they are provided
+        // Local Development requires access keys.
+        if (accessKeyId && secretKey) {
+            clientConfig.credentials = {
+                accessKeyId: accessKeyId,
+                secretAccessKey: secretKey!,
+            };
+        }
+
+        return new S3Client(clientConfig);
+
     } catch (error) {
+        console.error("Error creating S3 client:", error);
         return null;
     }
 }
 
 /**
- * 
- * @param s3Client 
- * @param filePath 
+ * Upload recording to S3-compatible storage (AWS S3 or DigitalOcean Spaces)
+ * @param s3Client S3 client instance
+ * @param bot Bot instance
+ * @param bucketName Bucket name (AWS S3 or DO Spaces)
+ * @returns Promise<string> Upload key or empty string on failure
  */
-export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot): Promise<string> {
+export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot, bucketName?: string): Promise<string> {
 
     // Attempt to read the file path. Allow for time for the file to become available.
     const filePath = bot.getRecordingPath();
@@ -91,9 +105,18 @@ export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot): Promise
     const key = `recordings/${uuid}-${bot.settings.meetingInfo.platform
         }-recording.${contentType.split("/")[1]}`;
 
+    // Determine bucket name from parameter or environment variables
+    const finalBucketName = bucketName || 
+                            process.env.DO_SPACES_BUCKET || 
+                            process.env.AWS_BUCKET_NAME;
+    
+    if (!finalBucketName) {
+        throw new Error("No bucket name provided. Set AWS_BUCKET_NAME or DO_SPACES_BUCKET environment variable");
+    }
+
     try {
         const commandObjects = {
-            Bucket: process.env.AWS_BUCKET_NAME!,
+            Bucket: finalBucketName,
             Key: key,
             Body: fileContent,
             ContentType: contentType,
@@ -101,7 +124,7 @@ export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot): Promise
 
         const putCommand = new PutObjectCommand(commandObjects);
         await s3Client.send(putCommand);
-        console.log(`Successfully uploaded recording to S3: ${key}`);
+        console.log(`Successfully uploaded recording to ${finalBucketName}: ${key}`);
 
         // Clean up local file
         await fsPromises.unlink(filePath);

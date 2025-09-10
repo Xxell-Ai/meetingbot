@@ -82,6 +82,15 @@ export const env = createEnv({
     CURRENT_COMMIT_SHA: z.string().optional(),
     // Deployment platform selection
     DEPLOYMENT_PLATFORM: z.enum(["AWS_ECS", "KUBERNETES"]).default("AWS_ECS"),
+    // Cloud provider selection
+    CLOUD_PROVIDER: z.enum(["AWS", "DIGITAL_OCEAN"]).default("AWS"),
+    // External system integration
+    EXTERNAL_SYSTEM_BASE_URL: z.string().url().optional().describe("Base URL for external system API"),
+    EXTERNAL_SYSTEM_API_KEY: z.string().optional().describe("API key for external system"),
+    // Recording upload preference
+    USE_EXTERNAL_SYSTEM_UPLOAD: z.boolean().default(false).describe("Whether to upload recordings to external system instead of S3"),
+    // Docker registry configuration
+    DOCKER_REGISTRY_OWNER: z.string().optional().describe("Docker registry owner/organization name"),
   },
 
   /**
@@ -122,6 +131,11 @@ export const env = createEnv({
     KUBE_NAMESPACE: process.env.KUBE_NAMESPACE,
     CURRENT_COMMIT_SHA: process.env.CURRENT_COMMIT_SHA,
     DEPLOYMENT_PLATFORM: process.env.DEPLOYMENT_PLATFORM,
+    CLOUD_PROVIDER: process.env.CLOUD_PROVIDER,
+    EXTERNAL_SYSTEM_BASE_URL: process.env.EXTERNAL_SYSTEM_BASE_URL,
+    EXTERNAL_SYSTEM_API_KEY: process.env.EXTERNAL_SYSTEM_API_KEY,
+    USE_EXTERNAL_SYSTEM_UPLOAD: process.env.USE_EXTERNAL_SYSTEM_UPLOAD === 'true',
+    DOCKER_REGISTRY_OWNER: process.env.DOCKER_REGISTRY_OWNER,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

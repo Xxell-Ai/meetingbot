@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { startHeartbeat, reportEvent } from "./monitoring";
 import { EventCode, type BotConfig } from "./types";
 import { createS3Client, uploadRecordingToS3 } from "./s3";
+import { uploadRecordingToExternalSystem, shouldUseExternalSystemUpload } from "./externalSystem";
 
 dotenv.config({path: '../test.env'}); // Load test.env for testing
 dotenv.config();
@@ -11,8 +12,6 @@ export const main = async () => {
   let hasErrorOccurred = false;
   const requiredEnvVars = [
     "BOT_DATA",
-    "AWS_BUCKET_NAME",
-    "AWS_REGION",
     "NODE_ENV",
   ] as const;
 
@@ -20,6 +19,28 @@ export const main = async () => {
   for (const envVar of requiredEnvVars) {
     if (!process.env[envVar]) {
       throw new Error(`Missing required environment variable: ${envVar}`);
+    }
+  }
+
+  // Determine cloud provider and validate corresponding environment variables
+  const cloudProvider = process.env.CLOUD_PROVIDER || "AWS";
+  const useExternalUpload = process.env.USE_EXTERNAL_SYSTEM_UPLOAD === 'true';
+  
+  if (!useExternalUpload) {
+    if (cloudProvider === "DIGITAL_OCEAN") {
+      const doRequiredVars = ["DO_SPACES_BUCKET", "DO_SPACES_REGION", "DO_SPACES_ENDPOINT"];
+      for (const envVar of doRequiredVars) {
+        if (!process.env[envVar]) {
+          throw new Error(`Missing required DigitalOcean environment variable: ${envVar}`);
+        }
+      }
+    } else {
+      const awsRequiredVars = ["AWS_BUCKET_NAME", "AWS_REGION"];
+      for (const envVar of awsRequiredVars) {
+        if (!process.env[envVar]) {
+          throw new Error(`Missing required AWS environment variable: ${envVar}`);
+        }
+      }
     }
   }
 
@@ -31,10 +52,27 @@ export const main = async () => {
   // Declare key variable at the top level of the function
   let key: string = "";
 
-  // Initialize S3 client
-  const s3Client = createS3Client(process.env.AWS_REGION!, process.env.AWS_ACCESS_KEY_ID, process.env.AWS_SECRET_ACCESS_KEY);
-  if (!s3Client) {
-    throw new Error("Failed to create S3 client");
+  // Initialize S3 client (if not using external upload)
+  let s3Client = null;
+  if (!useExternalUpload) {
+    if (cloudProvider === "DIGITAL_OCEAN") {
+      s3Client = createS3Client(
+        process.env.DO_SPACES_REGION!, 
+        process.env.AWS_ACCESS_KEY_ID, // DO Spaces uses same access key env vars
+        process.env.AWS_SECRET_ACCESS_KEY, 
+        process.env.DO_SPACES_ENDPOINT!
+      );
+    } else {
+      s3Client = createS3Client(
+        process.env.AWS_REGION!, 
+        process.env.AWS_ACCESS_KEY_ID, 
+        process.env.AWS_SECRET_ACCESS_KEY
+      );
+    }
+    
+    if (!s3Client) {
+      throw new Error(`Failed to create S3 client for ${cloudProvider}`);
+    }
   }
 
   // Create the appropriate bot instance based on platform
@@ -70,9 +108,37 @@ export const main = async () => {
       await bot.endLife();
     });
 
-    // Upload recording to S3
-    console.log("Start Upload to S3...");
-    key = await uploadRecordingToS3(s3Client, bot);
+    // Upload recording based on configuration
+    if (shouldUseExternalSystemUpload(
+      useExternalUpload, 
+      botData.meetingInfo.externalMeetingId, 
+      process.env.EXTERNAL_SYSTEM_BASE_URL
+    )) {
+      console.log("Starting upload to external system...");
+      try {
+        const externalResponse = await uploadRecordingToExternalSystem(
+          bot,
+          botData.meetingInfo.externalMeetingId!,
+          process.env.EXTERNAL_SYSTEM_BASE_URL!,
+          process.env.EXTERNAL_SYSTEM_API_KEY
+        );
+        key = `external_system_upload_${botData.meetingInfo.externalMeetingId}`;
+        console.log("External system upload completed:", externalResponse);
+      } catch (error) {
+        console.error("External system upload failed, falling back to S3:", error);
+        if (s3Client) {
+          console.log("Starting fallback upload to S3...");
+          key = await uploadRecordingToS3(s3Client, bot);
+        } else {
+          throw new Error("External system upload failed and no S3 client available for fallback");
+        }
+      }
+    } else if (s3Client) {
+      console.log(`Starting upload to ${cloudProvider} S3-compatible storage...`);
+      key = await uploadRecordingToS3(s3Client, bot);
+    } else {
+      throw new Error("No upload method configured. Enable external system upload or configure S3 storage.");
+    }
 
 
   } catch (error) {
@@ -83,7 +149,7 @@ export const main = async () => {
     });
   }
 
-  // After S3 upload and cleanup, stop the heartbeat
+  // After upload and cleanup, stop the heartbeat
   heartbeatController.abort();
   console.log("Bot execution completed, heartbeat stopped.");
 

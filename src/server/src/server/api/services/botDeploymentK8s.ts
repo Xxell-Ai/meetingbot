@@ -39,14 +39,17 @@ const k8sCoreApi = kc.makeApiClient(k8s.CoreV1Api);
 export function selectBotImage(meetingInfo: schema.MeetingInfo): string {
   const platform = meetingInfo.platform;
   const commitSha = env.CURRENT_COMMIT_SHA?.substring(0, 7) || "latest";
+  
+  // Use environment variable for Docker registry owner, fallback to Xxell-Ai
+  const registryOwner = process.env.DOCKER_REGISTRY_OWNER || "Xxell-Ai";
 
   switch (platform?.toLowerCase()) {
     case "google":
-      return `ghcr.io/meetingbot/bots/meet:sha-${commitSha}`;
+      return `ghcr.io/${registryOwner}/meetingbot-bots-meet:sha-${commitSha}`;
     case "teams":
-      return `ghcr.io/meetingbot/bots/teams:sha-${commitSha}`;
+      return `ghcr.io/${registryOwner}/meetingbot-bots-teams:sha-${commitSha}`;
     case "zoom":
-      return `ghcr.io/meetingbot/bots/zoom:sha-${commitSha}`;
+      return `ghcr.io/${registryOwner}/meetingbot-bots-zoom:sha-${commitSha}`;
     default:
       throw new Error(`Unsupported platform: ${platform}`);
   }

@@ -183,6 +183,7 @@ export const meetingInfoSchema = z.object({
   messageId: z.string().optional().describe("Message ID"),
   threadId: z.string().optional().describe("Thread ID"),
   platform: z.enum(["zoom", "teams", "google"]).optional().describe("Platform"),
+  externalMeetingId: z.string().optional().describe("External system meeting ID for recording upload"),
 });
 export type MeetingInfo = z.infer<typeof meetingInfoSchema>;
 

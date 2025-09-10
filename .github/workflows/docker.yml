@@ -2,7 +2,7 @@ name: Docker Build and Push
 
 on:
   push:
-    branches: ["main"]
+    branches: ["xxell-main", "feature/integrate-with-backend"]
   pull_request:
 
 env:
@@ -32,7 +32,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/meetingbot/server
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/meetingbot-server
           tags: |
             type=schedule
             type=ref,event=branch
@@ -73,7 +73,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/meetingbot/bots/${{ matrix.bot }}
+
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/meetingbot-bots-${{ matrix.bot }}
           tags: |
             type=schedule
             type=ref,event=branch
