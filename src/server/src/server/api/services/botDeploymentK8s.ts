@@ -29,7 +29,7 @@ if (env.NODE_ENV === "development") {
 }
 
 const k8sApi = kc.makeApiClient(k8s.BatchV1Api);
-const k8sCoreApi = kc.makeApiClient(k8s.CoreV1Api);
+// const k8sCoreApi = kc.makeApiClient(k8s.CoreV1Api); // Reserved for future use
 
 /**
  * Selects the appropriate bot Docker image based on meeting information
@@ -38,10 +38,10 @@ const k8sCoreApi = kc.makeApiClient(k8s.CoreV1Api);
  */
 export function selectBotImage(meetingInfo: schema.MeetingInfo): string {
   const platform = meetingInfo.platform;
-  const commitSha = env.CURRENT_COMMIT_SHA?.substring(0, 7) || "latest";
+  const commitSha = env.CURRENT_COMMIT_SHA?.substring(0, 7) ?? "latest";
   
   // Use environment variable for Docker registry owner, fallback to Xxell-Ai
-  const registryOwner = process.env.DOCKER_REGISTRY_OWNER || "Xxell-Ai";
+  const registryOwner = process.env.DOCKER_REGISTRY_OWNER ?? "Xxell-Ai";
 
   switch (platform?.toLowerCase()) {
     case "google":
@@ -131,7 +131,7 @@ export async function deployBotKubernetes({
           labels: {
             app: "meetingbot",
             "bot-id": botId.toString(),
-            platform: bot.meetingInfo.platform || "unknown",
+            platform: bot.meetingInfo.platform ?? "unknown",
           },
         },
         spec: {
@@ -155,7 +155,7 @@ export async function deployBotKubernetes({
                     },
                     {
                       name: "BACKEND_URL",
-                      value: `https://${env.DOMAIN_NAME || "localhost:3000"}/api/trpc`,
+                      value: `https://${env.DOMAIN_NAME ?? "localhost:3000"}/api/trpc`,
                     },
                     {
                       name: "DO_SPACES_BUCKET",
@@ -198,7 +198,7 @@ export async function deployBotKubernetes({
         console.log(`Job UID: ${response.body.metadata?.uid}`);
       } catch (error) {
         console.error("Failed to create Kubernetes job:", error);
-        throw new BotDeploymentError(`Failed to create Kubernetes job: ${error}`);
+        throw new BotDeploymentError(`Failed to create Kubernetes job: ${String(error)}`);
       }
     }
 
@@ -253,6 +253,9 @@ export async function getBotJobStatus(botId: number): Promise<string | null> {
     }
 
     const job = response.body.items[0];
+    if (!job) {
+      return null;
+    }
     const status = job.status;
 
     if (status?.succeeded) {
@@ -291,6 +294,9 @@ export async function deleteBotJob(botId: number): Promise<boolean> {
     }
 
     const job = response.body.items[0];
+    if (!job) {
+      return false;
+    }
     const jobName = job.metadata?.name;
 
     if (!jobName) {
