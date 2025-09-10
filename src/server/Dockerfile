@@ -33,6 +33,12 @@ ARG ECS_TASK_DEFINITION_ZOOM
 ARG ECS_CLUSTER_NAME
 ARG ECS_SUBNETS
 ARG ECS_SECURITY_GROUPS
+ARG CLOUD_PROVIDER
+ARG DEPLOYMENT_PLATFORM
+ARG EXTERNAL_SYSTEM_BASE_URL
+ARG EXTERNAL_SYSTEM_API_KEY
+ARG USE_EXTERNAL_SYSTEM_UPLOAD
+ARG DOCKER_REGISTRY_OWNER
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -52,7 +58,7 @@ RUN \
 FROM --platform=linux/amd64 gcr.io/distroless/nodejs20-debian12 AS runner
 WORKDIR /app
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 # ENV NEXT_TELEMETRY_DISABLED 1
 
@@ -64,6 +70,6 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
 EXPOSE 3000
-ENV PORT 3000
+ENV PORT=3000
 
 CMD ["server.js"]
