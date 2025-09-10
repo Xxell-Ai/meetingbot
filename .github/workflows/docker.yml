@@ -47,28 +47,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            AUTH_SECRET=fake-secret
-            AUTH_GITHUB_ID=fake-github-id
-            AUTH_GITHUB_SECRET=fake-github-secret
-            DATABASE_URL=postgresql://fake:fake@localhost:5432/fake
-            GITHUB_TOKEN=fake-token
-            AWS_ACCESS_KEY_ID=fake-key
-            AWS_SECRET_ACCESS_KEY=fake-secret
-            AWS_BUCKET_NAME=fake-bucket
-            AWS_REGION=us-east-1
-            ECS_TASK_DEFINITION_MEET=fake-task
-            ECS_TASK_DEFINITION_TEAMS=fake-task
-            ECS_TASK_DEFINITION_ZOOM=fake-task
-            ECS_CLUSTER_NAME=fake-cluster
-            ECS_SUBNETS=fake-subnet
-            ECS_SECURITY_GROUPS=fake-sg
-            CLOUD_PROVIDER=AWS
-            DEPLOYMENT_PLATFORM=KUBERNETES
-            EXTERNAL_SYSTEM_BASE_URL=https://fake-system.com
-            EXTERNAL_SYSTEM_API_KEY=fake-api-key
-            USE_EXTERNAL_SYSTEM_UPLOAD=false
-            DOCKER_REGISTRY_OWNER=${{ github.repository_owner }}
 
   bots:
     runs-on: ubuntu-latest
