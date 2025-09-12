@@ -35,7 +35,7 @@ terraform {
 provider "digitalocean" {
   # Token can be set via TF_VAR_do_token or DIGITALOCEAN_TOKEN
   token = var.do_token
-  
+
   # Spaces credentials can be set via TF_VAR variables or SPACES_ACCESS_KEY_ID/SPACES_SECRET_ACCESS_KEY
   spaces_access_id  = var.do_spaces_access_id
   spaces_secret_key = var.do_spaces_secret_key
@@ -59,7 +59,8 @@ locals {
     ), 0, 7
   )
 
-  server_environment_variables = {
+  # Base server environment variables
+  base_server_environment_variables = {
     PORT               = "3000"
     AUTH_TRUST_HOST    = "true"
     AUTH_SECRET        = random_password.auth_secret.result
@@ -73,7 +74,34 @@ locals {
     DO_SPACES_ENDPOINT = module.storage.bucket_endpoint
     KUBE_NAMESPACE     = "default"
     NODE_ENV           = "development"
+
+    # Cloud Provider Configuration
+    CLOUD_PROVIDER      = "DIGITAL_OCEAN"
+    DEPLOYMENT_PLATFORM = "KUBERNETES"
+
+    # External System Integration
+    USE_EXTERNAL_SYSTEM_UPLOAD = tostring(var.use_external_system_upload)
+
+    # Docker Registry Configuration
+    DOCKER_REGISTRY_OWNER = var.docker_registry_owner
+    CURRENT_COMMIT_SHA    = local.current_commit_sha_short
   }
+
+  # Optional external system variables
+  external_system_variables = var.external_system_base_url != null ? {
+    EXTERNAL_SYSTEM_BASE_URL = var.external_system_base_url
+  } : {}
+
+  external_system_api_key_variables = var.external_system_api_key != null ? {
+    EXTERNAL_SYSTEM_API_KEY = var.external_system_api_key
+  } : {}
+
+  # Merge all environment variables
+  server_environment_variables = merge(
+    local.base_server_environment_variables,
+    local.external_system_variables,
+    local.external_system_api_key_variables
+  )
 }
 
 # Random password for auth secret

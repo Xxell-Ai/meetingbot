@@ -47,7 +47,7 @@ resource "digitalocean_kubernetes_cluster" "this" {
 # RBAC for the server to manage bot jobs
 resource "kubernetes_service_account" "bot_manager" {
   depends_on = [digitalocean_kubernetes_cluster.this]
-  
+
   metadata {
     name      = "${var.name}-bot-manager"
     namespace = "default"
@@ -56,7 +56,7 @@ resource "kubernetes_service_account" "bot_manager" {
 
 resource "kubernetes_cluster_role" "bot_manager" {
   depends_on = [digitalocean_kubernetes_cluster.this]
-  
+
   metadata {
     name = "${var.name}-bot-manager"
   }
@@ -76,7 +76,7 @@ resource "kubernetes_cluster_role" "bot_manager" {
 
 resource "kubernetes_cluster_role_binding" "bot_manager" {
   depends_on = [digitalocean_kubernetes_cluster.this]
-  
+
   metadata {
     name = "${var.name}-bot-manager"
   }
@@ -121,10 +121,10 @@ resource "kubernetes_deployment" "server" {
 
       spec {
         service_account_name = kubernetes_service_account.bot_manager.metadata[0].name
-        
+
         container {
           name  = "server"
-          image = "ghcr.io/meetingbot/server:sha-${var.current_commit_sha}"
+          image = "ghcr.io/xxell-ai/meetingbot-server:sha-${var.current_commit_sha}"
 
           port {
             container_port = 3000
@@ -204,10 +204,10 @@ resource "kubernetes_ingress_v1" "server" {
     name      = "${var.name}-server"
     namespace = "default"
     annotations = {
-      "kubernetes.io/ingress.class"                      = "nginx"
-      "cert-manager.io/cluster-issuer"                   = "letsencrypt-prod"
-      "nginx.ingress.kubernetes.io/ssl-redirect"         = "true"
-      "service.beta.kubernetes.io/do-loadbalancer-name"  = var.loadbalancer_name
+      "kubernetes.io/ingress.class"                     = "nginx"
+      "cert-manager.io/cluster-issuer"                  = "letsencrypt-prod"
+      "nginx.ingress.kubernetes.io/ssl-redirect"        = "true"
+      "service.beta.kubernetes.io/do-loadbalancer-name" = var.loadbalancer_name
     }
   }
 

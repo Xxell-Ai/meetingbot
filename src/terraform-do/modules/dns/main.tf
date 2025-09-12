@@ -19,7 +19,7 @@ resource "digitalocean_record" "this" {
 resource "digitalocean_record" "www" {
   count  = var.create_www_record ? 1 : 0
   domain = var.domain_name
-  type   = "CNAME" 
+  type   = "CNAME"
   name   = "www"
   value  = "@"
   ttl    = var.dns_ttl
@@ -28,7 +28,7 @@ resource "digitalocean_record" "www" {
 # Optional subdomain records
 resource "digitalocean_record" "subdomains" {
   for_each = var.subdomains
-  
+
   domain = var.domain_name
   type   = each.value.type
   name   = each.key

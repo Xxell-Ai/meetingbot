@@ -231,3 +231,29 @@ variable "subdomains" {
   }))
   default = {}
 }
+
+# External System Integration (Optional)
+variable "external_system_base_url" {
+  description = "Base URL for external system API"
+  type        = string
+  default     = null
+}
+
+variable "external_system_api_key" {
+  description = "API key for external system"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "use_external_system_upload" {
+  description = "Whether to upload recordings to external system instead of S3"
+  type        = bool
+  default     = false
+}
+
+variable "docker_registry_owner" {
+  description = "Docker registry owner/organization name"
+  type        = string
+  default     = "Xxell-Ai"
+}

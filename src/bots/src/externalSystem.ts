@@ -83,9 +83,7 @@ export async function uploadRecordingToExternalSystem(
 
     // Add API key if provided
     if (apiKey) {
-      headers['Authorization'] = `Bearer ${apiKey}`;
-      // Also try x-api-key format in case the external system uses that
-      headers['x-api-key'] = apiKey;
+      headers['Authorization'] = `Api-Key ${apiKey}`;
     }
 
     // Make the upload request

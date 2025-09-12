@@ -16,8 +16,8 @@ resource "digitalocean_vpc" "this" {
 
 # Load Balancer
 resource "digitalocean_loadbalancer" "this" {
-  name   = "${var.name}-lb"
-  region = var.region
+  name     = "${var.name}-lb"
+  region   = var.region
   vpc_uuid = digitalocean_vpc.this.id
 
   forwarding_rule {

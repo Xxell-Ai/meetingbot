@@ -38,36 +38,52 @@ export const env = createEnv({
     AWS_BUCKET_NAME:
       process.env.NODE_ENV === "test"
         ? z.preprocess(() => "fake_aws_bucket_name", z.string())
+        : process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
+        ? z.string().optional().default("")
         : z.string(),
     AWS_REGION:
       process.env.NODE_ENV === "test"
         ? z.preprocess(() => "fake_aws_region", z.string())
+        : process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
+        ? z.string().optional().default("")
         : z.string(),
     ECS_TASK_DEFINITION_MEET:
-      process.env.NODE_ENV === "production"
+      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
+        ? z.string().optional().default("")
+        : process.env.NODE_ENV === "production"
         ? z.string()
         : z.string().default(""),
     ECS_TASK_DEFINITION_TEAMS:
-      process.env.NODE_ENV === "production"
+      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
+        ? z.string().optional().default("")
+        : process.env.NODE_ENV === "production"
         ? z.string()
         : z.string().default(""),
     ECS_TASK_DEFINITION_ZOOM:
-      process.env.NODE_ENV === "production"
+      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
+        ? z.string().optional().default("")
+        : process.env.NODE_ENV === "production"
         ? z.string()
         : z.string().default(""),
     ECS_CLUSTER_NAME:
-      process.env.NODE_ENV === "production"
+      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
+        ? z.string().optional().default("")
+        : process.env.NODE_ENV === "production"
         ? z.string()
         : z.string().default(""),
     ECS_SUBNETS:
-      process.env.NODE_ENV === "production"
+      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
+        ? z.array(z.string()).default([])
+        : process.env.NODE_ENV === "production"
         ? z.preprocess(
             (val) => (typeof val === "string" ? val.split(",") : []),
             z.array(z.string()),
           )
         : z.array(z.string()).default([]),
     ECS_SECURITY_GROUPS:
-      process.env.NODE_ENV === "production"
+      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
+        ? z.array(z.string()).default([])
+        : process.env.NODE_ENV === "production"
         ? z.preprocess(
             (val) => (typeof val === "string" ? val.split(",") : []),
             z.array(z.string()),

@@ -50,3 +50,11 @@ enable_cdn = false
 # DNS Configuration
 dns_ttl = 300
 create_www_record = false
+
+# External System Integration (Optional)
+# external_system_base_url = "https://your-external-system.com"
+# external_system_api_key = "your-external-api-key"
+# use_external_system_upload = true
+
+# Docker Registry Configuration (Optional)
+# docker_registry_owner = "your-github-username"
