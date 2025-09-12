@@ -47,48 +47,12 @@ export const env = createEnv({
         : process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
         ? z.string().optional().default("")
         : z.string(),
-    ECS_TASK_DEFINITION_MEET:
-      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
-        ? z.string().optional().default("")
-        : process.env.NODE_ENV === "production"
-        ? z.string()
-        : z.string().default(""),
-    ECS_TASK_DEFINITION_TEAMS:
-      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
-        ? z.string().optional().default("")
-        : process.env.NODE_ENV === "production"
-        ? z.string()
-        : z.string().default(""),
-    ECS_TASK_DEFINITION_ZOOM:
-      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
-        ? z.string().optional().default("")
-        : process.env.NODE_ENV === "production"
-        ? z.string()
-        : z.string().default(""),
-    ECS_CLUSTER_NAME:
-      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
-        ? z.string().optional().default("")
-        : process.env.NODE_ENV === "production"
-        ? z.string()
-        : z.string().default(""),
-    ECS_SUBNETS:
-      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
-        ? z.array(z.string()).default([])
-        : process.env.NODE_ENV === "production"
-        ? z.preprocess(
-            (val) => (typeof val === "string" ? val.split(",") : []),
-            z.array(z.string()),
-          )
-        : z.array(z.string()).default([]),
-    ECS_SECURITY_GROUPS:
-      process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
-        ? z.array(z.string()).default([])
-        : process.env.NODE_ENV === "production"
-        ? z.preprocess(
-            (val) => (typeof val === "string" ? val.split(",") : []),
-            z.array(z.string()),
-          )
-        : z.array(z.string()).default([]),
+    ECS_TASK_DEFINITION_MEET: z.string().default(""),
+    ECS_TASK_DEFINITION_TEAMS: z.string().default(""),
+    ECS_TASK_DEFINITION_ZOOM: z.string().default(""),
+    ECS_CLUSTER_NAME: z.string().default(""),
+    ECS_SUBNETS: z.array(z.string()).default([]),
+    ECS_SECURITY_GROUPS: z.array(z.string()).default([]),
     // DigitalOcean and Kubernetes configuration
     DOMAIN_NAME: z.string().optional(),
     DO_SPACES_BUCKET: z.string().optional(),
