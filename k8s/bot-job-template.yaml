@@ -1,0 +1,158 @@
+# Template for bot jobs - this will be used by the server to create dynamic jobs
+# The server will replace placeholders like {{BOT_ID}}, {{MEETING_URL}}, etc.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: meetingbot-{{BOT_ID}}-{{TIMESTAMP}}
+  namespace: meetingbot
+  labels:
+    app: meetingbot
+    component: bot
+    bot-id: "{{BOT_ID}}"
+    platform: "{{PLATFORM}}"
+spec:
+  # Job will be cleaned up after completion
+  ttlSecondsAfterFinished: 3600 # 1 hour
+  backoffLimit: 2 # Retry failed jobs up to 2 times
+  
+  template:
+    metadata:
+      labels:
+        app: meetingbot
+        component: bot
+        bot-id: "{{BOT_ID}}"
+        platform: "{{PLATFORM}}"
+    spec:
+      restartPolicy: Never
+      
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+      - name: bot
+        image: meetingbot/{{PLATFORM}}-bot:latest # e.g., meetingbot/meet-bot:latest
+        
+        env:
+        # Bot Configuration
+        - name: BOT_ID
+          value: "{{BOT_ID}}"
+        - name: BOT_DISPLAY_NAME
+          value: "{{BOT_DISPLAY_NAME}}"
+        - name: BOT_IMAGE
+          value: "{{BOT_IMAGE}}"
+        - name: MEETING_TITLE
+          value: "{{MEETING_TITLE}}"
+        - name: MEETING_URL
+          value: "{{MEETING_URL}}"
+        - name: MEETING_ID
+          value: "{{MEETING_ID}}"
+        - name: MEETING_PASSWORD
+          value: "{{MEETING_PASSWORD}}"
+        - name: PLATFORM
+          value: "{{PLATFORM}}"
+        - name: HEARTBEAT_INTERVAL
+          value: "{{HEARTBEAT_INTERVAL}}"
+        - name: CALLBACK_URL
+          value: "{{CALLBACK_URL}}"
+        
+        # Automatic Leave Configuration
+        - name: WAITING_ROOM_TIMEOUT
+          value: "{{WAITING_ROOM_TIMEOUT}}"
+        - name: NO_ONE_JOINED_TIMEOUT
+          value: "{{NO_ONE_JOINED_TIMEOUT}}"
+        - name: EVERYONE_LEFT_TIMEOUT
+          value: "{{EVERYONE_LEFT_TIMEOUT}}"
+        - name: INACTIVITY_TIMEOUT
+          value: "{{INACTIVITY_TIMEOUT}}"
+        
+        # Backend Communication
+        - name: BACKEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: BACKEND_URL
+        
+        # DigitalOcean Spaces Configuration
+        - name: DO_SPACES_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: DO_SPACES_REGION
+        - name: DO_SPACES_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: DO_SPACES_ENDPOINT
+        - name: USE_EXTERNAL_SYSTEM_UPLOAD
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: USE_EXTERNAL_SYSTEM_UPLOAD
+        
+        # Storage Secrets (DigitalOcean Spaces uses AWS SDK env vars)
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: AWS_SECRET_ACCESS_KEY
+        - name: DO_SPACES_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: DO_SPACES_BUCKET
+        
+        # Optional: External System Integration
+        - name: EXTERNAL_SYSTEM_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: EXTERNAL_SYSTEM_BASE_URL
+              optional: true
+        - name: EXTERNAL_SYSTEM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: EXTERNAL_SYSTEM_API_KEY
+              optional: true
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        
+        # Security context for container
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false # Bots need to write recording files
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - SYS_ADMIN # Required for Chrome/Chromium in container
+        
+        # Volume mounts for temporary storage
+        volumeMounts:
+        - name: tmp-storage
+          mountPath: /tmp
+        - name: recordings
+          mountPath: /app/recordings
+      
+      volumes:
+      - name: tmp-storage
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: recordings
+        emptyDir:
+          sizeLimit: 5Gi # Temporary storage for recordings before upload

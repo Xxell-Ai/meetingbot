@@ -105,13 +105,11 @@ export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot, bucketNa
     const key = `recordings/${uuid}-${bot.settings.meetingInfo.platform
         }-recording.${contentType.split("/")[1]}`;
 
-    // Determine bucket name from parameter or environment variables
-    const finalBucketName = bucketName || 
-                            process.env.DO_SPACES_BUCKET || 
-                            process.env.AWS_BUCKET_NAME;
+    // Use DigitalOcean Spaces bucket
+    const finalBucketName = bucketName || process.env.DO_SPACES_BUCKET;
     
     if (!finalBucketName) {
-        throw new Error("No bucket name provided. Set AWS_BUCKET_NAME or DO_SPACES_BUCKET environment variable");
+        throw new Error("No bucket name provided. Set DO_SPACES_BUCKET environment variable");
     }
 
     try {

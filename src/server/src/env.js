@@ -33,37 +33,43 @@ export const env = createEnv({
       process.env.NODE_ENV === "test"
         ? z.preprocess(() => "fake_github_token", z.string())
         : z.string(),
-    AWS_ACCESS_KEY_ID: z.string().optional(),
-    AWS_SECRET_ACCESS_KEY: z.string().optional(),
-    AWS_BUCKET_NAME:
+    // DigitalOcean Spaces credentials (uses AWS SDK env var names)
+    AWS_ACCESS_KEY_ID: 
       process.env.NODE_ENV === "test"
-        ? z.preprocess(() => "fake_aws_bucket_name", z.string())
-        : process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
-        ? z.string().optional().default("")
+        ? z.preprocess(() => "fake_access_key", z.string())
         : z.string(),
-    AWS_REGION:
+    AWS_SECRET_ACCESS_KEY: 
       process.env.NODE_ENV === "test"
-        ? z.preprocess(() => "fake_aws_region", z.string())
-        : process.env.DEPLOYMENT_PLATFORM === "KUBERNETES"
-        ? z.string().optional().default("")
+        ? z.preprocess(() => "fake_secret_key", z.string())
         : z.string(),
+    // Legacy AWS variables (not used in Kubernetes deployment)
+    AWS_BUCKET_NAME: z.string().optional().default(""),
+    AWS_REGION: z.string().optional().default(""),
     ECS_TASK_DEFINITION_MEET: z.string().default(""),
     ECS_TASK_DEFINITION_TEAMS: z.string().default(""),
     ECS_TASK_DEFINITION_ZOOM: z.string().default(""),
     ECS_CLUSTER_NAME: z.string().default(""),
     ECS_SUBNETS: z.array(z.string()).default([]),
     ECS_SECURITY_GROUPS: z.array(z.string()).default([]),
-    // DigitalOcean and Kubernetes configuration
+    // DigitalOcean Spaces configuration (required for Kubernetes deployment)
     DOMAIN_NAME: z.string().optional(),
-    DO_SPACES_BUCKET: z.string().optional(),
-    DO_SPACES_REGION: z.string().optional(), 
-    DO_SPACES_ENDPOINT: z.string().optional(),
+    DO_SPACES_BUCKET: 
+      process.env.NODE_ENV === "test"
+        ? z.preprocess(() => "fake_bucket", z.string())
+        : z.string(),
+    DO_SPACES_REGION: 
+      process.env.NODE_ENV === "test"
+        ? z.preprocess(() => "sgp1", z.string())
+        : z.string().default("sgp1"),
+    DO_SPACES_ENDPOINT: 
+      process.env.NODE_ENV === "test"
+        ? z.preprocess(() => "https://sgp1.digitaloceanspaces.com", z.string())
+        : z.string().default("https://sgp1.digitaloceanspaces.com"),
     KUBE_NAMESPACE: z.string().default("default"),
     CURRENT_COMMIT_SHA: z.string().optional(),
     // Deployment platform selection
     DEPLOYMENT_PLATFORM: z.enum(["AWS_ECS", "KUBERNETES"]).default("AWS_ECS"),
-    // Cloud provider selection
-    CLOUD_PROVIDER: z.enum(["AWS", "DIGITAL_OCEAN"]).default("AWS"),
+    // Note: Using DigitalOcean Spaces only for Kubernetes deployment
     // External system integration
     EXTERNAL_SYSTEM_BASE_URL: z.string().url().optional().describe("Base URL for external system API"),
     EXTERNAL_SYSTEM_API_KEY: z.string().optional().describe("API key for external system"),
@@ -111,7 +117,6 @@ export const env = createEnv({
     KUBE_NAMESPACE: process.env.KUBE_NAMESPACE,
     CURRENT_COMMIT_SHA: process.env.CURRENT_COMMIT_SHA,
     DEPLOYMENT_PLATFORM: process.env.DEPLOYMENT_PLATFORM,
-    CLOUD_PROVIDER: process.env.CLOUD_PROVIDER,
     EXTERNAL_SYSTEM_BASE_URL: process.env.EXTERNAL_SYSTEM_BASE_URL,
     EXTERNAL_SYSTEM_API_KEY: process.env.EXTERNAL_SYSTEM_API_KEY,
     USE_EXTERNAL_SYSTEM_UPLOAD: process.env.USE_EXTERNAL_SYSTEM_UPLOAD === 'true',

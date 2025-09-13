@@ -22,24 +22,20 @@ export const main = async () => {
     }
   }
 
-  // Determine cloud provider and validate corresponding environment variables
-  const cloudProvider = process.env.CLOUD_PROVIDER || "AWS";
+  // Validate DigitalOcean Spaces environment variables (if not using external upload)
   const useExternalUpload = process.env.USE_EXTERNAL_SYSTEM_UPLOAD === 'true';
   
   if (!useExternalUpload) {
-    if (cloudProvider === "DIGITAL_OCEAN") {
-      const doRequiredVars = ["DO_SPACES_BUCKET", "DO_SPACES_REGION", "DO_SPACES_ENDPOINT"];
-      for (const envVar of doRequiredVars) {
-        if (!process.env[envVar]) {
-          throw new Error(`Missing required DigitalOcean environment variable: ${envVar}`);
-        }
-      }
-    } else {
-      const awsRequiredVars = ["AWS_BUCKET_NAME", "AWS_REGION"];
-      for (const envVar of awsRequiredVars) {
-        if (!process.env[envVar]) {
-          throw new Error(`Missing required AWS environment variable: ${envVar}`);
-        }
+    const doRequiredVars = [
+      "DO_SPACES_BUCKET", 
+      "DO_SPACES_REGION", 
+      "DO_SPACES_ENDPOINT",
+      "AWS_ACCESS_KEY_ID",    // DO Spaces uses AWS SDK env vars
+      "AWS_SECRET_ACCESS_KEY" // DO Spaces uses AWS SDK env vars
+    ];
+    for (const envVar of doRequiredVars) {
+      if (!process.env[envVar]) {
+        throw new Error(`Missing required DigitalOcean Spaces environment variable: ${envVar}`);
       }
     }
   }
@@ -52,26 +48,18 @@ export const main = async () => {
   // Declare key variable at the top level of the function
   let key: string = "";
 
-  // Initialize S3 client (if not using external upload)
+  // Initialize DigitalOcean Spaces client (if not using external upload)
   let s3Client = null;
   if (!useExternalUpload) {
-    if (cloudProvider === "DIGITAL_OCEAN") {
-      s3Client = createS3Client(
-        process.env.DO_SPACES_REGION!, 
-        process.env.AWS_ACCESS_KEY_ID, // DO Spaces uses same access key env vars
-        process.env.AWS_SECRET_ACCESS_KEY, 
-        process.env.DO_SPACES_ENDPOINT!
-      );
-    } else {
-      s3Client = createS3Client(
-        process.env.AWS_REGION!, 
-        process.env.AWS_ACCESS_KEY_ID, 
-        process.env.AWS_SECRET_ACCESS_KEY
-      );
-    }
+    s3Client = createS3Client(
+      process.env.DO_SPACES_REGION!, 
+      process.env.AWS_ACCESS_KEY_ID, // DO Spaces uses same access key env vars
+      process.env.AWS_SECRET_ACCESS_KEY, 
+      process.env.DO_SPACES_ENDPOINT!
+    );
     
     if (!s3Client) {
-      throw new Error(`Failed to create S3 client for ${cloudProvider}`);
+      throw new Error("Failed to create DigitalOcean Spaces client");
     }
   }
 
@@ -134,7 +122,7 @@ export const main = async () => {
         }
       }
     } else if (s3Client) {
-      console.log(`Starting upload to ${cloudProvider} S3-compatible storage...`);
+      console.log(`Starting upload to DigitalOcean Spaces...`);
       key = await uploadRecordingToS3(s3Client, bot);
     } else {
       throw new Error("No upload method configured. Enable external system upload or configure S3 storage.");

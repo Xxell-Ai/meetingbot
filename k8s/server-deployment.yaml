@@ -1,0 +1,192 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meetingbot-server
+  namespace: meetingbot
+  labels:
+    app: meetingbot
+    component: server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: meetingbot
+      component: server
+  template:
+    metadata:
+      labels:
+        app: meetingbot
+        component: server
+    spec:
+      serviceAccountName: meetingbot-server
+      containers:
+      - name: server
+        image: meetingbot/server:latest # Replace with your actual image
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        # Load configuration from ConfigMap
+        - name: DEPLOYMENT_PLATFORM
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: DEPLOYMENT_PLATFORM
+        - name: KUBE_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: KUBE_NAMESPACE
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: NODE_ENV
+        - name: BACKEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: BACKEND_URL
+        - name: DOMAIN_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: DOMAIN_NAME
+        - name: DO_SPACES_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: DO_SPACES_REGION
+        - name: DO_SPACES_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: DO_SPACES_ENDPOINT
+        - name: USE_EXTERNAL_SYSTEM_UPLOAD
+          valueFrom:
+            configMapKeyRef:
+              name: meetingbot-config
+              key: USE_EXTERNAL_SYSTEM_UPLOAD
+        
+        # Load secrets - REQUIRED
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: DATABASE_URL
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: AWS_SECRET_ACCESS_KEY
+        - name: DO_SPACES_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: DO_SPACES_BUCKET
+        - name: AUTH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: AUTH_SECRET
+        - name: NEXTAUTH_URL
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: NEXTAUTH_URL
+        - name: AUTH_GITHUB_ID
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: AUTH_GITHUB_ID
+        - name: AUTH_GITHUB_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: AUTH_GITHUB_SECRET
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: GITHUB_TOKEN
+        
+        # Optional: External System Integration
+        - name: EXTERNAL_SYSTEM_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: EXTERNAL_SYSTEM_BASE_URL
+              optional: true
+        - name: EXTERNAL_SYSTEM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: EXTERNAL_SYSTEM_API_KEY
+              optional: true
+        - name: DOCKER_REGISTRY_OWNER
+          valueFrom:
+            secretKeyRef:
+              name: meetingbot-secrets
+              key: DOCKER_REGISTRY_OWNER
+              optional: true
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # Security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false # Next.js needs write access for .next folder
+          capabilities:
+            drop:
+            - ALL
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meetingbot-server
+  namespace: meetingbot
+  labels:
+    app: meetingbot
+    component: server
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: meetingbot
+    component: server

@@ -1,0 +1,81 @@
+# Role for MeetingBot server to manage bot jobs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meetingbot
+  name: meetingbot-bot-manager
+  labels:
+    app: meetingbot
+rules:
+# Jobs management - for creating and managing bot jobs
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+
+# Pods management - for monitoring bot pods
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+
+# Pod logs - for retrieving bot logs
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get", "list"]
+
+# Events - for monitoring job events
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+
+# ConfigMaps and Secrets - for bot configuration (read-only)
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+
+---
+# RoleBinding to bind the role to the service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: meetingbot-bot-manager-binding
+  namespace: meetingbot
+  labels:
+    app: meetingbot
+subjects:
+- kind: ServiceAccount
+  name: meetingbot-server
+  namespace: meetingbot
+roleRef:
+  kind: Role
+  name: meetingbot-bot-manager
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for accessing node information (optional, for monitoring)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: meetingbot-node-reader
+  labels:
+    app: meetingbot
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding for node access (optional)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: meetingbot-node-reader-binding
+  labels:
+    app: meetingbot
+subjects:
+- kind: ServiceAccount
+  name: meetingbot-server
+  namespace: meetingbot
+roleRef:
+  kind: ClusterRole
+  name: meetingbot-node-reader
+  apiGroup: rbac.authorization.k8s.io
