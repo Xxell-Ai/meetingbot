@@ -7,6 +7,8 @@ node_modules/
 *.mp4
 
 .env
+.env.local
+.env.*.local
 .secrets
 config.json
 envBotData.ts
