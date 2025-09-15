@@ -25,10 +25,89 @@ spec:
         runAsGroup: 1001
         fsGroup: 1001
         runAsNonRoot: true
+      initContainers:
+        # Wait for PostgreSQL to be ready
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432 -U postgres; do
+                echo "Waiting for PostgreSQL to be ready..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+        # Run database migrations
+        - name: db-migrate
+          image: ghcr.io/xxell-ai/meetingbot-server:sha-8cca387
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Running database migrations..."
+              cd /app
+              echo "Checking if migrations are needed..."
+              
+              # Try using the built-in migration script first
+              if [ -f "package.json" ] && grep -q "db:migrate" package.json; then
+                echo "Using npm script for migrations..."
+                npm run db:migrate
+              else
+                echo "Using direct Drizzle migration..."
+                # Use the updated Drizzle migration approach
+                node -e "
+                const { migrate } = require('drizzle-orm/postgres-js/migrator');
+                const { drizzle } = require('drizzle-orm/postgres-js');
+                const postgres = require('postgres');
+                
+                async function runMigrations() {
+                  try {
+                    console.log('Connecting to database...');
+                    const sql = postgres(process.env.DATABASE_URL, { max: 1 });
+                    const db = drizzle(sql);
+                    
+                    console.log('Running migrations from ./drizzle folder...');
+                    await migrate(db, { migrationsFolder: './drizzle' });
+                    
+                    console.log('Migrations completed successfully!');
+                    await sql.end();
+                  } catch (error) {
+                    console.error('Migration failed:', error);
+                    process.exit(1);
+                  }
+                }
+                
+                runMigrations();
+                " || {
+                  echo "Direct migration failed, trying alternative approach..."
+                  # Alternative: try using drizzle-kit if available
+                  npx drizzle-kit migrate || {
+                    echo "Migration tools not available, skipping migrations..."
+                    echo "Please ensure your database schema is up to date"
+                  }
+                }
+              fi
+              echo "Database migration completed!"
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: DATABASE_URL
+            - name: NODE_ENV
+              value: "development"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
       containers:
         - name: server
-          image: meetingbot-server:local
-          imagePullPolicy: Never  # Use local image
+          image: ghcr.io/xxell-ai/meetingbot-server:sha-8cca387
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
               name: http
@@ -59,6 +138,11 @@ spec:
                 configMapKeyRef:
                   name: meetingbot-config
                   key: DOMAIN_NAME
+            - name: CURRENT_COMMIT_SHA
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: CURRENT_COMMIT_SHA
             - name: DO_SPACES_REGION
               valueFrom:
                 configMapKeyRef:

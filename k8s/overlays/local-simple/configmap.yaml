@@ -15,6 +15,7 @@ data:
   NODE_ENV: "development"
   BACKEND_URL: "http://meetingbot-server:3000"
   DOMAIN_NAME: "localhost:3000"
+  CURRENT_COMMIT_SHA: "8cca387"
   
   # DigitalOcean Spaces Configuration
   DO_SPACES_REGION: "sgp1"
