@@ -3,7 +3,6 @@ import { botsRouter } from "./routers/bots";
 import { eventsRouter } from "./routers/events";
 import { apiKeysRouter } from "./routers/apiKeys";
 import { usageRouter } from "./routers/usage";
-import { communityRouter } from "./routers/community";
 
 /**
  * This is the primary router for your server.
@@ -15,7 +14,6 @@ export const appRouter = createTRPCRouter({
   events: eventsRouter,
   apiKeys: apiKeysRouter,
   usage: usageRouter,
-  community: communityRouter,
 });
 
 // export type definition of API

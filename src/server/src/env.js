@@ -29,10 +29,6 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
-    GITHUB_TOKEN:
-      process.env.NODE_ENV === "test"
-        ? z.preprocess(() => "fake_github_token", z.string())
-        : z.string(),
     // DigitalOcean Spaces credentials (uses AWS SDK env var names)
     AWS_ACCESS_KEY_ID: 
       process.env.NODE_ENV === "test"
@@ -42,15 +38,7 @@ export const env = createEnv({
       process.env.NODE_ENV === "test"
         ? z.preprocess(() => "fake_secret_key", z.string())
         : z.string(),
-    // Legacy AWS variables (not used in Kubernetes deployment)
-    AWS_BUCKET_NAME: z.string().optional().default(""),
-    AWS_REGION: z.string().optional().default(""),
-    ECS_TASK_DEFINITION_MEET: z.string().default(""),
-    ECS_TASK_DEFINITION_TEAMS: z.string().default(""),
-    ECS_TASK_DEFINITION_ZOOM: z.string().default(""),
-    ECS_CLUSTER_NAME: z.string().default(""),
-    ECS_SUBNETS: z.array(z.string()).default([]),
-    ECS_SECURITY_GROUPS: z.array(z.string()).default([]),
+    // Note: AWS ECS variables removed - using Kubernetes only deployment
     // DigitalOcean Spaces configuration (required for Kubernetes deployment)
     DOMAIN_NAME: z.string().optional(),
     DO_SPACES_BUCKET: 
@@ -67,8 +55,8 @@ export const env = createEnv({
         : z.string().default("https://sgp1.digitaloceanspaces.com"),
     KUBE_NAMESPACE: z.string().default("default"),
     CURRENT_COMMIT_SHA: z.string().optional(),
-    // Deployment platform selection
-    DEPLOYMENT_PLATFORM: z.enum(["AWS_ECS", "KUBERNETES"]).default("AWS_ECS"),
+    // Deployment platform - Kubernetes only
+    DEPLOYMENT_PLATFORM: z.enum(["KUBERNETES"]).default("KUBERNETES"),
     // Note: Using DigitalOcean Spaces only for Kubernetes deployment
     // External system integration
     EXTERNAL_SYSTEM_BASE_URL: z.string().url().optional().describe("Base URL for external system API"),
@@ -98,17 +86,8 @@ export const env = createEnv({
     AUTH_GITHUB_SECRET: process.env.AUTH_GITHUB_SECRET,
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
-    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
-    AWS_BUCKET_NAME: process.env.AWS_BUCKET_NAME,
-    AWS_REGION: process.env.AWS_REGION,
-    ECS_TASK_DEFINITION_MEET: process.env.ECS_TASK_DEFINITION_MEET,
-    ECS_TASK_DEFINITION_TEAMS: process.env.ECS_TASK_DEFINITION_TEAMS,
-    ECS_TASK_DEFINITION_ZOOM: process.env.ECS_TASK_DEFINITION_ZOOM,
-    ECS_CLUSTER_NAME: process.env.ECS_CLUSTER_NAME,
-    ECS_SUBNETS: process.env.ECS_SUBNETS,
-    ECS_SECURITY_GROUPS: process.env.ECS_SECURITY_GROUPS,
     // DigitalOcean and Kubernetes runtime environment
     DOMAIN_NAME: process.env.DOMAIN_NAME,
     DO_SPACES_BUCKET: process.env.DO_SPACES_BUCKET,

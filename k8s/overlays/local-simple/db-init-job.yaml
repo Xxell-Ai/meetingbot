@@ -1,0 +1,79 @@
+---
+# Database initialization job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init
+  namespace: meetingbot-local
+  labels:
+    app: meetingbot
+    component: db-init
+    environment: local
+spec:
+  template:
+    metadata:
+      labels:
+        app: meetingbot
+        component: db-init
+        environment: local
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        # Wait for PostgreSQL to be ready
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432 -U postgres; do
+                echo "Waiting for PostgreSQL to be ready..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+      containers:
+        - name: db-migrate
+          image: meetingbot-server:local
+          imagePullPolicy: Never
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Running database migrations..."
+              cd /app
+              echo "Applying Drizzle migrations using Node.js..."
+              node -e "
+              const { migrate } = require('drizzle-orm/postgres-js/migrator');
+              const { drizzle } = require('drizzle-orm/postgres-js');
+              const postgres = require('postgres');
+              
+              async function runMigrations() {
+                console.log('Connecting to database...');
+                const sql = postgres(process.env.DATABASE_URL, { max: 1 });
+                const db = drizzle(sql);
+                
+                console.log('Running migrations...');
+                await migrate(db, { migrationsFolder: './drizzle' });
+                
+                console.log('Migrations completed successfully!');
+                await sql.end();
+              }
+              
+              runMigrations().catch(console.error);
+              "
+              echo "Database initialization completed!"
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: DATABASE_URL
+            - name: NODE_ENV
+              value: "development"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"

@@ -41,7 +41,15 @@ function getStorageConfig(): StorageConfig {
 function createS3Client(): S3Client {
   const config = getStorageConfig();
   
-  const clientConfig: any = {
+  const clientConfig: {
+    region: string;
+    credentials?: {
+      accessKeyId: string;
+      secretAccessKey: string;
+    };
+    endpoint?: string;
+    forcePathStyle?: boolean;
+  } = {
     region: config.region,
   };
 
@@ -59,7 +67,6 @@ function createS3Client(): S3Client {
     clientConfig.forcePathStyle = false; // Use virtual hosted-style for DO Spaces
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
   return new S3Client(clientConfig);
 }
 
@@ -70,9 +77,7 @@ class StorageClientSingleton {
   private static instance: S3Client | null = null;
 
   public static getInstance(): S3Client {
-    if (!StorageClientSingleton.instance) {
-      StorageClientSingleton.instance = createS3Client();
-    }
+    StorageClientSingleton.instance ??= createS3Client();
     return StorageClientSingleton.instance;
   }
 

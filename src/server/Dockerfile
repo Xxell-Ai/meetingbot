@@ -18,6 +18,7 @@ RUN \
 ##### BUILDER
 
 FROM --platform=linux/amd64 node:20-alpine AS builder
+# Build-time arguments (optional for build, required at runtime)
 ARG AUTH_SECRET
 ARG AUTH_GITHUB_ID
 ARG AUTH_GITHUB_SECRET
@@ -25,14 +26,14 @@ ARG DATABASE_URL
 ARG GITHUB_TOKEN
 ARG AWS_ACCESS_KEY_ID
 ARG AWS_SECRET_ACCESS_KEY
-ARG AWS_BUCKET_NAME
-ARG AWS_REGION
-ARG ECS_TASK_DEFINITION_MEET
-ARG ECS_TASK_DEFINITION_TEAMS
-ARG ECS_TASK_DEFINITION_ZOOM
-ARG ECS_CLUSTER_NAME
-ARG ECS_SUBNETS
-ARG ECS_SECURITY_GROUPS
+# DigitalOcean Spaces configuration
+ARG DO_SPACES_BUCKET
+ARG DO_SPACES_REGION
+ARG DO_SPACES_ENDPOINT
+# Kubernetes configuration
+ARG DEPLOYMENT_PLATFORM
+ARG KUBE_NAMESPACE
+ARG DOMAIN_NAME
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -49,21 +50,32 @@ RUN \
 
 ##### RUNNER
 
-FROM --platform=linux/amd64 gcr.io/distroless/nodejs20-debian12 AS runner
+FROM --platform=linux/amd64 node:20-alpine AS runner
 WORKDIR /app
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
-# ENV NEXT_TELEMETRY_DISABLED 1
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/next.config.js ./
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Copy drizzle migration files for database operations
+COPY --from=builder /app/drizzle ./drizzle
+
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
 
 EXPOSE 3000
-ENV PORT 3000
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-CMD ["server.js"]
+# Health check for Kubernetes
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+CMD ["node", "server.js"]

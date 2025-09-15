@@ -3,7 +3,6 @@ import DashboardCard from "./DashboardCard";
 import { File, Plus, LogIn, Users } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import Link from "next/link";
-import CommunityCard from "./CommunityCard";
 import { useSession } from "next-auth/react";
 
 export default function WelcomeDashboard() {
@@ -80,7 +79,17 @@ export default function WelcomeDashboard() {
             </div>
           </div>
           <div className="h-full min-h-0 lg:col-span-1">
-            <CommunityCard className="h-full" />
+            <DashboardCard
+              title="Community Updates"
+              className="h-full"
+              content="Join our community to get the latest updates, ask questions, and contribute to the project!"
+              icon={<Users className="text-slate-500" />}
+              link={{
+                type: "EXTERNAL",
+                url: "https://discord.gg/hPdjJW9xzT",
+                text: "Join Community",
+              }}
+            />
           </div>
         </div>
       </div>

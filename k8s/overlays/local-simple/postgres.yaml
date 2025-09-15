@@ -1,0 +1,116 @@
+---
+# PostgreSQL ConfigMap for local development
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: meetingbot-local
+  labels:
+    app: postgres
+    environment: local
+data:
+  POSTGRES_DB: meetingbot_local
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: password
+  PGDATA: /var/lib/postgresql/data/pgdata
+
+---
+# PostgreSQL PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-storage
+  namespace: meetingbot-local
+  labels:
+    app: postgres
+    environment: local
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+# PostgreSQL Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: meetingbot-local
+  labels:
+    app: postgres
+    environment: local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+      environment: local
+  template:
+    metadata:
+      labels:
+        app: postgres
+        environment: local
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          envFrom:
+            - configMapRef:
+                name: postgres-config
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-storage
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: meetingbot-local
+  labels:
+    app: postgres
+    environment: local
+spec:
+  selector:
+    app: postgres
+    environment: local
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: postgres
+  type: ClusterIP

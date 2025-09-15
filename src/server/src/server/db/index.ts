@@ -15,7 +15,8 @@ const globalForDb = globalThis as unknown as {
 const conn =
   globalForDb.conn ??
   postgres(env.DATABASE_URL, {
-    ssl: {
+    // Only use SSL in production or when not explicitly disabled in connection string
+    ssl: env.DATABASE_URL?.includes('sslmode=disable') ? false : {
       rejectUnauthorized: false,
     },
     max: 1,

@@ -1,0 +1,35 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meetingbot-local
+  name: meetingbot-role
+  labels:
+    app: meetingbot
+    environment: local
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: meetingbot-rolebinding
+  namespace: meetingbot-local
+  labels:
+    app: meetingbot
+    environment: local
+subjects:
+- kind: ServiceAccount
+  name: meetingbot-service-account
+  namespace: meetingbot-local
+roleRef:
+  kind: Role
+  name: meetingbot-role
+  apiGroup: rbac.authorization.k8s.io

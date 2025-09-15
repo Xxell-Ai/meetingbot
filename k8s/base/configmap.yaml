@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meetingbot-config
+  namespace: meetingbot
+data:
+  # Deployment Configuration
+  DEPLOYMENT_PLATFORM: "KUBERNETES"
+  KUBE_NAMESPACE: "meetingbot"
+  
+  # Application Configuration
+  NODE_ENV: "production"
+  BACKEND_URL: "http://meetingbot-server:3000"
+  
+  # DigitalOcean Spaces Configuration
+  DO_SPACES_REGION: "sgp1"
+  DO_SPACES_ENDPOINT: "https://sgp1.digitaloceanspaces.com"
+  
+  # External System Integration (optional)
+  USE_EXTERNAL_SYSTEM_UPLOAD: "false"
+  
+  # Bot Configuration Defaults
+  BOT_HEARTBEAT_INTERVAL: "5000"
+

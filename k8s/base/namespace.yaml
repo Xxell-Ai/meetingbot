@@ -3,15 +3,13 @@ kind: Namespace
 metadata:
   name: meetingbot
   labels:
-    app: meetingbot
-    environment: production
+    name: meetingbot
 ---
-# Service Account for MeetingBot server to manage bot jobs
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: meetingbot-server
+  name: meetingbot-service-account
   namespace: meetingbot
   labels:
     app: meetingbot
-    component: server
+

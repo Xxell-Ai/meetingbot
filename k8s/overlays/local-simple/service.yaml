@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: meetingbot-server
+  namespace: meetingbot-local
+  labels:
+    app: meetingbot
+    component: server
+    environment: local
+spec:
+  selector:
+    app: meetingbot-server
+    environment: local
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP

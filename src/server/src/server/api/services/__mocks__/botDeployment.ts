@@ -26,9 +26,6 @@ export const deployBot = jest.fn().mockImplementation(async ({
 // Mock implementation of shouldDeployImmediately
 export const shouldDeployImmediately = jest.fn().mockReturnValue(false);
 
-// Mock implementation of selectBotTaskDefinition
-export const selectBotTaskDefinition = jest.fn().mockReturnValue("mock-task-definition");
-
 // Mock implementation of BotDeploymentError
 export class BotDeploymentError extends Error {
   constructor(message: string) {

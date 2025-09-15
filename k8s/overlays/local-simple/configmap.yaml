@@ -2,30 +2,30 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: meetingbot-config
-  namespace: meetingbot
+  namespace: meetingbot-local
   labels:
     app: meetingbot
+    environment: local
 data:
   # Deployment Configuration
   DEPLOYMENT_PLATFORM: "KUBERNETES"
-  KUBE_NAMESPACE: "meetingbot"
+  KUBE_NAMESPACE: "meetingbot-local"
   
   # Application Configuration
-  NODE_ENV: "production"
+  NODE_ENV: "development"
   BACKEND_URL: "http://meetingbot-server:3000"
-  
-  # External Access Configuration
-  DOMAIN_NAME: "meetingbot.yourdomain.com"
+  DOMAIN_NAME: "localhost:3000"
   
   # DigitalOcean Spaces Configuration
   DO_SPACES_REGION: "sgp1"
   DO_SPACES_ENDPOINT: "https://sgp1.digitaloceanspaces.com"
   
-  # External System Integration (optional)
+  # External System Integration (disabled for local testing)
   USE_EXTERNAL_SYSTEM_UPLOAD: "false"
   
   # Bot Configuration Defaults
   BOT_HEARTBEAT_INTERVAL: "5000"
   
-  # Logging Configuration
-  LOG_LEVEL: "info"
+  # Database Configuration (local PostgreSQL)
+  DATABASE_URL: "postgresql://postgres:password@postgres:5432/meetingbot_local?sslmode=disable"
+  

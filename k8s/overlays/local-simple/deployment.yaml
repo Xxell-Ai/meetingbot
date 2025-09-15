@@ -1,0 +1,147 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meetingbot-server
+  namespace: meetingbot-local
+  labels:
+    app: meetingbot
+    component: server
+    environment: local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: meetingbot-server
+      environment: local
+  template:
+    metadata:
+      labels:
+        app: meetingbot-server
+        environment: local
+    spec:
+      serviceAccountName: meetingbot-service-account
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        runAsNonRoot: true
+      containers:
+        - name: server
+          image: meetingbot-server:local
+          imagePullPolicy: Never  # Use local image
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            # From ConfigMap
+            - name: DEPLOYMENT_PLATFORM
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: DEPLOYMENT_PLATFORM
+            - name: KUBE_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: KUBE_NAMESPACE
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: NODE_ENV
+            - name: BACKEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: BACKEND_URL
+            - name: DOMAIN_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: DOMAIN_NAME
+            - name: DO_SPACES_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: DO_SPACES_REGION
+            - name: DO_SPACES_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: DO_SPACES_ENDPOINT
+            - name: USE_EXTERNAL_SYSTEM_UPLOAD
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: USE_EXTERNAL_SYSTEM_UPLOAD
+            
+            # Database from ConfigMap (easier to manage for local dev)
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: DATABASE_URL
+            
+            # From Secrets
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: DO_SPACES_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: DO_SPACES_BUCKET
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: AUTH_SECRET
+            - name: AUTH_TRUST_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: AUTH_TRUST_HOST
+            - name: NEXTAUTH_URL
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: NEXTAUTH_URL
+            - name: AUTH_GITHUB_ID
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: AUTH_GITHUB_ID
+            - name: AUTH_GITHUB_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: AUTH_GITHUB_SECRET
+          
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+          
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5

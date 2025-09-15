@@ -2,7 +2,9 @@ name: Docker Build and Push
 
 on:
   push:
-    branches: ["xxell-main", "feature/integrate-with-backend"]
+    branches: 
+      - "xxell-main"
+      - "feature/**"
   pull_request:
 
 env:

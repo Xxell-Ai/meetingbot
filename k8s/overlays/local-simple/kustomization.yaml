@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace override for local environment
+namespace: meetingbot-local
+
+# Environment-specific labels
+labels:
+  - pairs:
+      environment: local
+
+# Image overrides for local development
+images:
+  - name: meetingbot-server
+    newName: meetingbot-server
+    newTag: local
+
+# Resources - include base resources and local additions
+resources:
+  # Base resources (copied and modified)
+  - namespace.yaml
+  - rbac.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - deployment.yaml
+  - service.yaml
+  
+  # Local-only resources
+  - postgres.yaml
+  - db-init-job.yaml

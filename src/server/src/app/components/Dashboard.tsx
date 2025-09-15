@@ -1,8 +1,7 @@
 "use client";
 
 import DashboardCard from "./DashboardCard";
-import CommunityCard from "./CommunityCard";
-import { Bot, File, Key } from "lucide-react";
+import { Bot, File, Key, Users } from "lucide-react";
 import { UsageChart } from "../usage/components/UsageChart";
 import { api } from "~/trpc/react";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -93,9 +92,17 @@ export default function Dashboard() {
               text: "View Documentation",
             }}
           />
-          <div className="h-[30rem] min-h-0 lg:row-span-2 lg:h-full">
-            <CommunityCard className="h-full" />
-          </div>
+          <DashboardCard
+            title="Join our Community"
+            className="h-full min-h-56"
+            content="To seek support, suggest features, report bugs and contribute yourself, join our Community!"
+            icon={<Users className="text-slate-500" />}
+            link={{
+              type: "EXTERNAL",
+              url: "https://discord.gg/hPdjJW9xzT",
+              text: "Join Community",
+            }}
+          />
           <div className="h-[30rem] lg:col-span-2 lg:row-span-2 lg:min-h-0">
             <DashboardCard
               title="Your Recent Usage"

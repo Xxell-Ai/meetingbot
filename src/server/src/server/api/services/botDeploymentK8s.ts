@@ -2,15 +2,8 @@ import { type BotConfig, bots } from "~/server/db/schema";
 import { eq } from "drizzle-orm";
 import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type * as schema from "~/server/db/schema";
-import { spawn } from "child_process";
-import path from "path";
-import { fileURLToPath } from "url";
 import { env } from "~/env";
 import * as k8s from "@kubernetes/client-node";
-
-// Get the directory path using import.meta.url
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Initialize Kubernetes client
 const kc = new k8s.KubeConfig();
@@ -32,16 +25,20 @@ const k8sApi = kc.makeApiClient(k8s.BatchV1Api);
 // const k8sCoreApi = kc.makeApiClient(k8s.CoreV1Api); // Reserved for future use
 
 /**
- * Selects the appropriate bot Docker image based on meeting information
+ * Selects the appropriate bot Docker image from GHCR based on meeting platform
  * @param meetingInfo - Information about the meeting, including platform
- * @returns The Docker image to use for deployment
+ * @returns The GHCR Docker image to use for deployment
  */
 export function selectBotImage(meetingInfo: schema.MeetingInfo): string {
   const platform = meetingInfo.platform;
-  const commitSha = env.CURRENT_COMMIT_SHA?.substring(0, 7) ?? "latest";
   
-  // Use environment variable for Docker registry owner, fallback to Xxell-Ai
-  const registryOwner = process.env.DOCKER_REGISTRY_OWNER ?? "Xxell-Ai";
+  console.log(`selectBotImage: NODE_ENV=${env.NODE_ENV}, platform=${platform}`);
+  
+  // Always use GHCR registry images
+  console.log("Using GHCR registry images");
+  const commitSha = env.CURRENT_COMMIT_SHA?.substring(0, 7) ?? "latest";
+  const registryOwner = (process.env.DOCKER_REGISTRY_OWNER ?? "xxell-ai").toLowerCase();
+  console.log(`Registry: ${registryOwner}, Commit SHA: ${commitSha}`);
 
   switch (platform?.toLowerCase()) {
     case "google":
@@ -74,7 +71,6 @@ export async function deployBotKubernetes({
     throw new Error("Bot not found");
   }
   const bot = botResult[0];
-  const dev = env.NODE_ENV === "development";
 
   // First, update bot status to deploying
   await db.update(bots).set({ status: "DEPLOYING" }).where(eq(bots.id, botId));
@@ -94,94 +90,125 @@ export async function deployBotKubernetes({
       callbackUrl: bot.callbackUrl ?? undefined,
     };
 
-    if (dev) {
-      // Get the absolute path to the bots directory
-      const botsDir = path.resolve(__dirname, "../../../../../bots");
+    // Always deploy to Kubernetes
+    // Uses local images for development, registry images for production
+    const namespace = env.KUBE_NAMESPACE || "default";
+    const jobName = `meetingbot-${botId}-${Date.now()}`;
 
-      // Spawn the bot process locally
-      const botProcess = spawn("pnpm", ["start"], {
-        cwd: botsDir,
-        env: {
-          ...process.env,
-          BOT_DATA: JSON.stringify(config),
+    const job: k8s.V1Job = {
+      apiVersion: "batch/v1",
+      kind: "Job",
+      metadata: {
+        name: jobName,
+        namespace: namespace,
+        labels: {
+          app: "meetingbot",
+          "bot-id": botId.toString(),
+          platform: bot.meetingInfo.platform ?? "unknown",
         },
-      });
-
-      // Log output for debugging
-      botProcess.stdout.on("data", (data) => {
-        console.log(`Bot ${botId} stdout: ${data}`);
-      });
-      botProcess.stderr.on("data", (data) => {
-        console.error(`Bot ${botId} stderr: ${data}`);
-      });
-      botProcess.on("error", (error) => {
-        console.error(`Bot ${botId} process error:`, error);
-      });
-    } else {
-      // Deploy to Kubernetes
-      const namespace = env.KUBE_NAMESPACE || "default";
-      const jobName = `meetingbot-${botId}-${Date.now()}`;
-
-      const job: k8s.V1Job = {
-        apiVersion: "batch/v1",
-        kind: "Job",
-        metadata: {
-          name: jobName,
-          namespace: namespace,
-          labels: {
-            app: "meetingbot",
-            "bot-id": botId.toString(),
-            platform: bot.meetingInfo.platform ?? "unknown",
-          },
-        },
-        spec: {
-          template: {
-            metadata: {
-              labels: {
-                app: "meetingbot-bot",
-                "bot-id": botId.toString(),
-              },
+      },
+      spec: {
+        template: {
+          metadata: {
+            labels: {
+              app: "meetingbot-bot",
+              "bot-id": botId.toString(),
             },
-            spec: {
-              restartPolicy: "Never",
-              containers: [
-                {
-                  name: "bot",
-                  image: selectBotImage(bot.meetingInfo),
-                  env: [
-                    {
-                      name: "BOT_DATA",
-                      value: JSON.stringify(config),
-                    },
-                    {
+          },
+          spec: {
+            restartPolicy: "Never",
+            containers: [
+              {
+                name: "bot",
+                image: selectBotImage(bot.meetingInfo),
+                env: [
+                  {
+                    name: "BOT_DATA",
+                    value: JSON.stringify(config),
+                  },
+                  {
                       name: "BACKEND_URL",
-                      value: `https://${env.DOMAIN_NAME ?? "localhost:3000"}/api/trpc`,
-                    },
-                    {
-                      name: "DO_SPACES_BUCKET",
-                      value: env.DO_SPACES_BUCKET,
-                    },
-                    {
-                      name: "DO_SPACES_REGION",
-                      value: env.DO_SPACES_REGION,
-                    },
-                    {
-                      name: "DO_SPACES_ENDPOINT",
-                      value: env.DO_SPACES_ENDPOINT,
+                      valueFrom: {
+                        configMapKeyRef: {
+                          name: "meetingbot-config",
+                          key: "BACKEND_URL",
+                        },
+                      },
                     },
                     {
                       name: "NODE_ENV",
-                      value: "production",
+                      valueFrom: {
+                        configMapKeyRef: {
+                          name: "meetingbot-config",
+                          key: "NODE_ENV",
+                        },
+                      },
+                    },
+                    // DigitalOcean Spaces Configuration
+                    {
+                      name: "DO_SPACES_BUCKET",
+                      valueFrom: {
+                        secretKeyRef: {
+                          name: "meetingbot-secrets",
+                          key: "DO_SPACES_BUCKET",
+                        },
+                      },
+                    },
+                    {
+                      name: "DO_SPACES_REGION",
+                      valueFrom: {
+                        configMapKeyRef: {
+                          name: "meetingbot-config",
+                          key: "DO_SPACES_REGION",
+                        },
+                      },
+                    },
+                    {
+                      name: "DO_SPACES_ENDPOINT",
+                      valueFrom: {
+                        configMapKeyRef: {
+                          name: "meetingbot-config",
+                          key: "DO_SPACES_ENDPOINT",
+                        },
+                      },
+                    },
+                    {
+                      name: "AWS_ACCESS_KEY_ID",
+                      valueFrom: {
+                        secretKeyRef: {
+                          name: "meetingbot-secrets",
+                          key: "AWS_ACCESS_KEY_ID",
+                        },
+                      },
+                    },
+                    {
+                      name: "AWS_SECRET_ACCESS_KEY",
+                      valueFrom: {
+                        secretKeyRef: {
+                          name: "meetingbot-secrets",
+                          key: "AWS_SECRET_ACCESS_KEY",
+                        },
+                      },
+                    },
+                    // External System Integration (optional)
+                    {
+                      name: "USE_EXTERNAL_SYSTEM_UPLOAD",
+                      valueFrom: {
+                        configMapKeyRef: {
+                          name: "meetingbot-config",
+                          key: "USE_EXTERNAL_SYSTEM_UPLOAD",
+                        },
+                      },
                     },
                   ],
                   resources: {
                     requests: {
-                      cpu: "2",
-                      memory: "8Gi",
+                      cpu: "500m",
+                      memory: "1Gi",
                     },
                     limits: {
-                      cpu: "4",
-                      memory: "16Gi",
+                      cpu: "2",
+                      memory: "4Gi",
                     },
                   },
                 },
@@ -200,7 +227,6 @@ export async function deployBotKubernetes({
         console.error("Failed to create Kubernetes job:", error);
         throw new BotDeploymentError(`Failed to create Kubernetes job: ${String(error)}`);
       }
-    }
 
     // Update status to joining call
     const result = await db

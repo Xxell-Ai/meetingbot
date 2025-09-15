@@ -132,8 +132,9 @@ describe('Main function tests', () => {
             platform: "mock-platform",
             heartbeatInterval: 200,
         });
-        process.env.AWS_BUCKET_NAME = "mock-bucket";
-        process.env.AWS_REGION = "mock-region";
+        process.env.DO_SPACES_BUCKET = "mock-bucket";
+        process.env.DO_SPACES_REGION = "sgp1";
+        process.env.DO_SPACES_ENDPOINT = "https://sgp1.digitaloceanspaces.com";
         process.env.AWS_ACCESS_KEY_ID = "mock-access-key";
         process.env.AWS_SECRET_ACCESS_KEY = "mock-secret-key";
 
