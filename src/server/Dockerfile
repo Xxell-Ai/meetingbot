@@ -58,15 +58,26 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# Copy application files first
 COPY --from=builder /app/next.config.js ./
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
 # Copy drizzle migration files for database operations
 COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/migrate.ts ./migrate.ts
+COPY --from=builder /app/src/env.js ./src/env.js
+COPY --from=builder /app/start.sh ./start.sh
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Copy the full node_modules from deps stage to ensure migration dependencies are available
+# This solves the Next.js standalone build issue that excludes unused dependencies
+COPY --from=deps /app/node_modules ./node_modules
+
+# Make startup script executable
+RUN chmod +x start.sh
 
 USER nextjs
 
@@ -78,4 +89,4 @@ ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
-CMD ["node", "server.js"]
+CMD ["./start.sh"]

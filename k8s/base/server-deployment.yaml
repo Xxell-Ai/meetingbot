@@ -14,6 +14,54 @@ spec:
         app: meetingbot-server
     spec:
       serviceAccountName: meetingbot-service-account
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        runAsNonRoot: true
+      initContainers:
+        # Wait for PostgreSQL to be ready
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432 -U postgres; do
+                echo "Waiting for PostgreSQL to be ready..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+        # Run database migrations using Drizzle's proper migration tracking
+        - name: db-migrate
+          image: meetingbot-server:latest
+          imagePullPolicy: Never
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cd /app
+              export NODE_PATH="/app/migration_modules:$NODE_PATH"
+              echo "📦 Running migration script..."
+              npx tsx migrate.ts
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: meetingbot-secrets
+                  key: DATABASE_URL
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: meetingbot-config
+                  key: NODE_ENV
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
       containers:
       - name: server
         image: meetingbot-server:latest

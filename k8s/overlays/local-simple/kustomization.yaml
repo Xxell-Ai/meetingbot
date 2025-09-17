@@ -13,7 +13,7 @@ labels:
 images:
   - name: meetingbot-server
     newName: meetingbot-server
-    newTag: ghcr.io/xxell-ai/meetingbot-server:sha-8cca387
+    newTag: local-20250917-000858
 
 # Resources - include base resources and local additions
 resources:

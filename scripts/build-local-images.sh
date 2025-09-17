@@ -56,15 +56,28 @@ build_server_image() {
     
     cd src/server
     
-    # Build with local tag
-    docker build -t meetingbot-server:local \
+    # Generate timestamp-based tag
+    TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+    SERVER_TAG="local-${TIMESTAMP}"
+    
+    print_status "Building with tag: meetingbot-server:${SERVER_TAG}"
+    
+    # Build with timestamp tag
+    docker build -t "meetingbot-server:${SERVER_TAG}" \
         --build-arg SKIP_ENV_VALIDATION=1 \
         --progress=plain \
         .
     
+    # Also tag as latest for convenience
+    docker tag "meetingbot-server:${SERVER_TAG}" "meetingbot-server:local"
+    
     cd ../..
     
-    print_success "Server image built: meetingbot-server:local"
+    print_success "Server image built: meetingbot-server:${SERVER_TAG}"
+    print_success "Also tagged as: meetingbot-server:local"
+    
+    # Store the tag for later use
+    export SERVER_IMAGE_TAG="${SERVER_TAG}"
 }
 
 # Build bot images (Meet bot only for initial testing)
@@ -93,12 +106,69 @@ list_images() {
     echo
 }
 
+# Update kustomization files with new image tag
+update_kustomization() {
+    print_status "Updating kustomization files with new image tag..."
+    
+    if [ -z "$SERVER_IMAGE_TAG" ]; then
+        print_error "SERVER_IMAGE_TAG not set, cannot update kustomization"
+        return 1
+    fi
+    
+    local kustomization_file="k8s/overlays/local-simple/kustomization.yaml"
+    local deployment_file="k8s/overlays/local-simple/deployment.yaml"
+    
+    # Update kustomization.yaml
+    if [ -f "$kustomization_file" ]; then
+        print_status "Updating $kustomization_file..."
+        
+        # Use sed to update the newTag field (only the tag part, not the full image name)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS sed
+            sed -i '' "s|newTag: .*|newTag: ${SERVER_IMAGE_TAG}|g" "$kustomization_file"
+        else
+            # Linux sed
+            sed -i "s|newTag: .*|newTag: ${SERVER_IMAGE_TAG}|g" "$kustomization_file"
+        fi
+        
+        print_success "Updated kustomization.yaml with tag: ${SERVER_IMAGE_TAG}"
+    else
+        print_warning "Kustomization file not found: $kustomization_file"
+    fi
+    
+    # Update deployment.yaml image references
+    if [ -f "$deployment_file" ]; then
+        print_status "Updating $deployment_file..."
+        
+        # Update both init container and main container image references
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS sed - update any existing meetingbot-server image references
+            sed -i '' "s|image: ghcr.io/xxell-ai/meetingbot-server:.*|image: meetingbot-server:${SERVER_IMAGE_TAG}|g" "$deployment_file"
+            sed -i '' "s|image: meetingbot-server:.*|image: meetingbot-server:${SERVER_IMAGE_TAG}|g" "$deployment_file"
+            # Ensure imagePullPolicy is set to Never for local images (add if not exists after image lines)
+            sed -i '' '/image: meetingbot-server:/{ N; /imagePullPolicy:/!s/$/\
+          imagePullPolicy: Never/; }' "$deployment_file"
+        else
+            # Linux sed - update any existing meetingbot-server image references
+            sed -i "s|image: ghcr.io/xxell-ai/meetingbot-server:.*|image: meetingbot-server:${SERVER_IMAGE_TAG}|g" "$deployment_file"
+            sed -i "s|image: meetingbot-server:.*|image: meetingbot-server:${SERVER_IMAGE_TAG}|g" "$deployment_file"
+            # Ensure imagePullPolicy is set to Never for local images (add if not exists after image lines)
+            sed -i '/image: meetingbot-server:/{ N; /imagePullPolicy:/!s/$/\n          imagePullPolicy: Never/; }' "$deployment_file"
+        fi
+        
+        print_success "Updated deployment.yaml with tag: meetingbot-server:${SERVER_IMAGE_TAG}"
+    else
+        print_warning "Deployment file not found: $deployment_file"
+    fi
+}
+
 # Verify images
 verify_images() {
     print_status "Verifying built images..."
     
     required_images=(
         "meetingbot-server:local"
+        "meetingbot-server:${SERVER_IMAGE_TAG}"
         "meetingbot-meet-bot:local"
     )
     
@@ -128,16 +198,22 @@ main() {
     build_bot_images
     echo
     
+    # Update kustomization files
+    update_kustomization
+    echo
+    
     # List and verify images
     list_images
     verify_images
     
     echo
     print_success "🎉 All images built successfully!"
+    print_success "📝 Kustomization files updated with new image tags"
     echo
     print_status "Next steps:"
     echo "  1. Run: ./scripts/setup-local-env.sh"
-    echo "  2. Or deploy manually: kubectl apply -k k8s/overlays/local"
+    echo "  2. Or deploy manually: kubectl apply -k k8s/overlays/local-simple"
+    echo "  3. Image tag used: meetingbot-server:${SERVER_IMAGE_TAG}"
     echo
 }
 
