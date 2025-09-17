@@ -32,10 +32,6 @@ export const reportEvent = async (
   eventType: EventCode,
   eventData: any = null
 ) => {
-  // do not report events in development
-  if (process.env.NODE_ENV === "development") {
-    return;
-  }
 
   try {
     // Report event

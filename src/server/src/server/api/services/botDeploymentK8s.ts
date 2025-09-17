@@ -8,18 +8,8 @@ import * as k8s from "@kubernetes/client-node";
 // Initialize Kubernetes client
 const kc = new k8s.KubeConfig();
 
-// Load configuration based on environment
-if (env.NODE_ENV === "development") {
-  // In development, try to load from default kubeconfig
-  try {
-    kc.loadFromDefault();
-  } catch (error) {
-    console.warn("Could not load kubeconfig in development:", error);
-  }
-} else {
-  // In production, load from in-cluster config
-  kc.loadFromCluster();
-}
+// Load in-cluster configuration for all environments since everything runs in Kubernetes
+kc.loadFromCluster();
 
 const k8sApi = kc.makeApiClient(k8s.BatchV1Api);
 // const k8sCoreApi = kc.makeApiClient(k8s.CoreV1Api); // Reserved for future use
@@ -223,12 +213,12 @@ export async function deployBotKubernetes({
                   ],
                   resources: {
                     requests: {
-                      cpu: "500m",
-                      memory: "1Gi",
+                      cpu: "1",
+                      memory: "2Gi",
                     },
                     limits: {
-                      cpu: "2",
-                      memory: "4Gi",
+                      cpu: "4",
+                      memory: "8Gi",
                     },
                   },
                 },
