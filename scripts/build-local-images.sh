@@ -83,18 +83,27 @@ build_server_image() {
 # Build bot images (Meet bot only for initial testing)
 build_bot_images() {
     print_status "Building Meet bot image..."
-    
+
+    if [ -z "$SERVER_TAG" ]; then
+        print_error "SERVER_TAG not set, cannot build bot images with matching tag"
+        return 1
+    fi
+
     cd src/bots
-    
-    # Build Meet bot (from bots directory using meet/Dockerfile)
-    print_status "Building Meet bot image..."
-    docker build -f meet/Dockerfile -t meetingbot-meet-bot:local \
+
+    # Build Meet bot with same tag as server (from bots directory using meet/Dockerfile)
+    print_status "Building Meet bot image with tag: ${SERVER_TAG}"
+    docker build -f meet/Dockerfile -t "meetingbot-meet-bot:${SERVER_TAG}" \
         --progress=plain \
         .
-    
+
+    # Also tag as local for convenience
+    docker tag "meetingbot-meet-bot:${SERVER_TAG}" "meetingbot-meet-bot:local"
+
     cd ../..
-    
-    print_success "Meet bot image built successfully"
+
+    print_success "Meet bot image built: meetingbot-meet-bot:${SERVER_TAG}"
+    print_success "Also tagged as: meetingbot-meet-bot:local"
     print_status "Skipping Teams and Zoom bots for initial testing"
 }
 

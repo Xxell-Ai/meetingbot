@@ -40,7 +40,7 @@ spec:
               echo "PostgreSQL is ready!"
         # Run database migrations using Drizzle's proper migration tracking
         - name: db-migrate
-          image: meetingbot-server:local-20250917-000858
+          image: meetingbot-server:local-20250917-225146
           imagePullPolicy: Never
           command: ["npx", "tsx", "migrate.ts"]
           env:
@@ -60,7 +60,7 @@ spec:
               memory: "1Gi"
       containers:
         - name: server
-          image: meetingbot-server:local-20250917-000858
+          image: meetingbot-server:local-20250917-225146
           imagePullPolicy: Never
           command: ["node", "server.js"]
           ports:

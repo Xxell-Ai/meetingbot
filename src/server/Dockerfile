@@ -53,7 +53,7 @@ RUN \
 FROM --platform=linux/amd64 node:20-alpine AS runner
 WORKDIR /app
 
-ENV NODE_ENV=production
+# NODE_ENV will be set via environment variables in deployment
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
