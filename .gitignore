@@ -6,12 +6,17 @@ node_modules/
 *.webm
 *.mp4
 
+# Secrets and sensitive files
 .env
 .env.local
 .env.*.local
+.env.production
 .secrets
 config.json
 envBotData.ts
+secrets.yaml
+**/secrets.yaml
+**/*secrets.yaml
 
 **/.next/
 /src/bots/screenshot.png
