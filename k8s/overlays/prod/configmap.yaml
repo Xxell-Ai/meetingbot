@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meetingbot-config
+  namespace: meetingbot-prod
+  labels:
+    app: meetingbot
+    environment: prod
+data:
+  # Environment-specific configuration
+  NODE_ENV: "production"
+  KUBE_NAMESPACE: "meetingbot-prod"
+  DEPLOYMENT_PLATFORM: "kubernetes"
+
+  # Backend URL for production environment
+  BACKEND_URL: "https://meetingbot.yourdomain.com"
+
+  # DigitalOcean Spaces Configuration (common settings)
+  DO_SPACES_REGION: "sgp1"
+  DO_SPACES_ENDPOINT: "https://sgp1.digitaloceanspaces.com"
+  USE_EXTERNAL_SYSTEM_UPLOAD: "true"
+
+  # Production-specific settings
+  DEBUG: "false"
+  LOG_LEVEL: "info"

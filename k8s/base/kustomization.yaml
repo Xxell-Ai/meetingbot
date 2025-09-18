@@ -23,9 +23,5 @@ labels:
 commonAnnotations:
   managed-by: kustomize
 
-# Image transformations
-images:
-  - name: meetingbot-server
-    newTag: latest
-
-# Note: ConfigMap and Secret generators are handled in overlays
+# Note: Image tags are handled in overlays for environment-specific versions
+# Note: ConfigMap and Secret overrides are handled in overlays

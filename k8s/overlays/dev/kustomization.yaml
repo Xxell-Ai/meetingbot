@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: meetingbot-dev
+
+# Namespace override for dev environment
+namespace: meetingbot-dev
+
+# Environment-specific labels
+labels:
+  - pairs:
+      environment: dev
+
+# Include base resources
+resources:
+  - ../../base
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+
+# Image overrides for dev environment
+# This will be updated automatically by the CI/CD workflow
+images:
+  - name: meetingbot-server
+    newName: registry.digitalocean.com/meetingbot/meetingbot-server
+    newTag: dev-latest
+
+# Patches can be added here for dev-specific modifications

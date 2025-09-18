@@ -2,9 +2,9 @@ name: Docker Build and Push
 
 on:
   push:
-    branches: 
+    branches:
       - "xxell-main"
-      # - "feature/**"
+      - "feature/**"
   pull_request:
 
 env:
@@ -30,17 +30,29 @@ jobs:
           username: ${{ secrets.DO_REGISTRY_TOKEN }}
           password: ${{ secrets.DO_REGISTRY_TOKEN }}
 
+      - name: Determine environment and tag
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/xxell-main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "tag_prefix=prod" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/heads/feature/* ]]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "tag_prefix=dev" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "tag_prefix=dev" >> $GITHUB_OUTPUT
+          fi
+          echo "commit_sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
       - name: Extract server metadata for Docker
         id: meta
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/meetingbot/meetingbot-server
           tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=tag
-            type=ref,event=pr
-            type=sha
+            type=raw,value=${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}
+            type=raw,value=${{ steps.env.outputs.tag_prefix }}-latest
 
       - name: Build and push server Docker image
         uses: docker/build-push-action@v4
@@ -49,6 +61,27 @@ jobs:
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Install kustomize
+        if: github.event_name != 'pull_request'
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Update kustomize image tag
+        if: github.event_name != 'pull_request'
+        run: |
+          cd k8s/overlays/${{ steps.env.outputs.environment }}
+          kustomize edit set image meetingbot-server=registry.digitalocean.com/meetingbot/meetingbot-server:${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}
+
+      - name: Commit kustomize changes
+        if: github.event_name != 'pull_request'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add k8s/overlays/${{ steps.env.outputs.environment }}/kustomization.yaml
+          git commit -m "Update ${{ steps.env.outputs.environment }} image tag to ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}" || exit 0
+          git push
 
   bots:
     runs-on: ubuntu-latest
@@ -71,18 +104,29 @@ jobs:
           username: ${{ secrets.DO_REGISTRY_TOKEN }}
           password: ${{ secrets.DO_REGISTRY_TOKEN }}
 
+      - name: Determine environment and tag
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/xxell-main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "tag_prefix=prod" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/heads/feature/* ]]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "tag_prefix=dev" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "tag_prefix=dev" >> $GITHUB_OUTPUT
+          fi
+          echo "commit_sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v4
         with:
-
           images: ${{ env.REGISTRY }}/meetingbot/meetingbot-bots-${{ matrix.bot }}
           tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=tag
-            type=ref,event=pr
-            type=sha
+            type=raw,value=${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}
+            type=raw,value=${{ steps.env.outputs.tag_prefix }}-latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
