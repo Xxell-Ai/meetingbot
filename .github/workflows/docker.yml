@@ -62,24 +62,38 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Install kustomize
+      - name: Checkout Helm repository
         if: github.event_name != 'pull_request'
-        run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
+        uses: actions/checkout@v3
+        with:
+          repository: Xxell-Ai/helm
+          token: ${{ secrets.HELM_REPO_TOKEN }}
+          path: helm-repo
 
-      - name: Update kustomize image tag
+      - name: Update Helm chart values
         if: github.event_name != 'pull_request'
         run: |
-          cd k8s/overlays/${{ steps.env.outputs.environment }}
-          kustomize edit set image meetingbot-server=registry.digitalocean.com/meetingbot/meetingbot-server:${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}
+          cd helm-repo
 
-      - name: Commit kustomize changes
+          # Update image tag in the appropriate environment values file
+          VALUES_FILE="meetingbot/values/${{ steps.env.outputs.environment }}.yaml"
+
+          if [[ -f "$VALUES_FILE" ]]; then
+            # Update image tag using sed
+            sed -i "s|tag:.*|tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}|g" "$VALUES_FILE"
+            echo "Updated $VALUES_FILE with new image tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}"
+          else
+            echo "Values file $VALUES_FILE not found"
+            exit 1
+          fi
+
+      - name: Commit Helm changes
         if: github.event_name != 'pull_request'
         run: |
+          cd helm-repo
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add k8s/overlays/${{ steps.env.outputs.environment }}/kustomization.yaml
+          git add meetingbot/values/${{ steps.env.outputs.environment }}.yaml
           git commit -m "Update ${{ steps.env.outputs.environment }} image tag to ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}" || exit 0
           git push
 
