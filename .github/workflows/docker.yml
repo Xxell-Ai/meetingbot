@@ -77,13 +77,19 @@ jobs:
         run: |
           cd helm-repo
 
-          # Update image tag in the appropriate environment values file
+          # Update values in the appropriate environment values file
           VALUES_FILE="meetingbot/values/${{ steps.env.outputs.environment }}.yaml"
 
           if [[ -f "$VALUES_FILE" ]]; then
-            # Update image tag using sed
+            # Update image tag
             sed -i "s|tag:.*|tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}|g" "$VALUES_FILE"
-            echo "Updated $VALUES_FILE with new image tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}"
+
+            # Update currentCommitSha for bot deployment
+            sed -i "s|currentCommitSha:.*|currentCommitSha: \"${{ steps.env.outputs.commit_sha }}\"|g" "$VALUES_FILE"
+
+            echo "Updated $VALUES_FILE with:"
+            echo "  - Image tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}"
+            echo "  - Commit SHA: ${{ steps.env.outputs.commit_sha }}"
           else
             echo "Values file $VALUES_FILE not found"
             exit 1

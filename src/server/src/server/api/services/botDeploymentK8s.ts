@@ -43,18 +43,21 @@ export function selectBotImage(meetingInfo: schema.MeetingInfo): string {
         throw new Error(`Unsupported platform: ${platform}`);
     }
   } else {
-    console.log("Using GHCR registry images");
+    console.log("Using DigitalOcean Container Registry images");
     const commitSha = env.CURRENT_COMMIT_SHA?.substring(0, 7) ?? "latest";
     const registryOwner = (process.env.DOCKER_REGISTRY_OWNER ?? "xxell-ai").toLowerCase();
     console.log(`Registry: ${registryOwner}, Commit SHA: ${commitSha}`);
 
+    // Determine tag prefix based on environment/branch
+    const tagPrefix = env.NODE_ENV === "production" ? "prod" : "dev";
+
     switch (platform?.toLowerCase()) {
       case "google":
-        return `ghcr.io/${registryOwner}/meetingbot-bots-meet:sha-${commitSha}`;
+        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-meet:${tagPrefix}-${commitSha}`;
       case "teams":
-        return `ghcr.io/${registryOwner}/meetingbot-bots-teams:sha-${commitSha}`;
+        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-teams:${tagPrefix}-${commitSha}`;
       case "zoom":
-        return `ghcr.io/${registryOwner}/meetingbot-bots-zoom:sha-${commitSha}`;
+        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-zoom:${tagPrefix}-${commitSha}`;
       default:
         throw new Error(`Unsupported platform: ${platform}`);
     }
