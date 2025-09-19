@@ -64,46 +64,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Checkout Helm repository
-        if: github.event_name != 'pull_request'
-        uses: actions/checkout@v3
-        with:
-          repository: Xxell-Ai/helm
-          token: ${{ secrets.HELM_REPO_TOKEN }}
-          path: helm-repo
-
-      - name: Update Helm chart values
-        if: github.event_name != 'pull_request'
-        run: |
-          cd helm-repo
-
-          # Update values in the appropriate environment values file
-          VALUES_FILE="meetingbot/values/${{ steps.env.outputs.environment }}.yaml"
-
-          if [[ -f "$VALUES_FILE" ]]; then
-            # Update image tag
-            sed -i "s|tag:.*|tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}|g" "$VALUES_FILE"
-
-            # Update currentCommitSha for bot deployment
-            sed -i "s|currentCommitSha:.*|currentCommitSha: \"${{ steps.env.outputs.commit_sha }}\"|g" "$VALUES_FILE"
-
-            echo "Updated $VALUES_FILE with:"
-            echo "  - Image tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}"
-            echo "  - Commit SHA: ${{ steps.env.outputs.commit_sha }}"
-          else
-            echo "Values file $VALUES_FILE not found"
-            exit 1
-          fi
-
-      - name: Commit Helm changes
-        if: github.event_name != 'pull_request'
-        run: |
-          cd helm-repo
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add meetingbot/values/${{ steps.env.outputs.environment }}.yaml
-          git commit -m "Update ${{ steps.env.outputs.environment }} image tag to ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}" || exit 0
-          git push
 
   bots:
     runs-on: ubuntu-latest
@@ -160,3 +120,65 @@ jobs:
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  update-helm:
+    needs: [server, bots]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Determine environment and tag
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/xxell-main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "tag_prefix=prod" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/heads/feature/* ]]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "tag_prefix=dev" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "tag_prefix=dev" >> $GITHUB_OUTPUT
+          fi
+          echo "commit_sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Checkout Helm repository
+        uses: actions/checkout@v3
+        with:
+          repository: Xxell-Ai/helm
+          token: ${{ secrets.HELM_REPO_TOKEN }}
+          path: helm-repo
+
+      - name: Update Helm chart values
+        run: |
+          cd helm-repo
+
+          # Update values in the appropriate environment values file
+          VALUES_FILE="meetingbot/values/${{ steps.env.outputs.environment }}.yaml"
+
+          if [[ -f "$VALUES_FILE" ]]; then
+            # Update image tag
+            sed -i "s|tag:.*|tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}|g" "$VALUES_FILE"
+
+            # Update currentCommitSha for bot deployment
+            sed -i "s|currentCommitSha:.*|currentCommitSha: \"${{ steps.env.outputs.commit_sha }}\"|g" "$VALUES_FILE"
+
+            echo "Updated $VALUES_FILE with:"
+            echo "  - Image tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}"
+            echo "  - Commit SHA: ${{ steps.env.outputs.commit_sha }}"
+          else
+            echo "Values file $VALUES_FILE not found"
+            exit 1
+          fi
+
+      - name: Commit Helm changes
+        run: |
+          cd helm-repo
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add meetingbot/values/${{ steps.env.outputs.environment }}.yaml
+          git commit -m "Update ${{ steps.env.outputs.environment }} images: server and bots to ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}" || exit 0
+          git push
