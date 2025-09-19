@@ -49,7 +49,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/meetingbot/meetingbot-server
+          images: ${{ env.REGISTRY }}/xxell-ai/meetingbot-server
           tags: |
             type=raw,value=${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}
             type=raw,value=${{ steps.env.outputs.tag_prefix }}-latest
@@ -137,7 +137,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/meetingbot/meetingbot-bots-${{ matrix.bot }}
+          images: ${{ env.REGISTRY }}/xxell-ai/meetingbot-bots-${{ matrix.bot }}
           tags: |
             type=raw,value=${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}
             type=raw,value=${{ steps.env.outputs.tag_prefix }}-latest
