@@ -401,12 +401,15 @@ export class MeetsBot extends Bot {
       ]
     }
 
-    // Audio-only recording parameters
-    console.log('Loading Dockerized FFMPEG Params for Audio-Only Recording ...')
+    // Audio-only recording parameters optimized for speech recognition (Whisper-compatible)
+    console.log('Loading Dockerized FFMPEG Params for Audio-Only Recording (Whisper-Optimized) ...')
 
     const audioInputFormat = "pulse";
     const audioSource = "default";
-    const audioBitrate = "128k";
+    // Optimized for speech recognition based on OpenAI Whisper standards
+    const audioBitrate = process.env.AUDIO_BITRATE || "24k"; // Optimized for 16kHz speech (lower bitrate works well with lower sample rate)
+    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "16000"; // Whisper standard: 16kHz (optimal for speech)
+    const channels = process.env.AUDIO_CHANNELS || "1"; // Mono - Whisper processes mono audio
 
     return [
       '-v', 'verbose', // Verbose logging for debugging
@@ -414,9 +417,9 @@ export class MeetsBot extends Bot {
       "-f", audioInputFormat,
       "-i", audioSource,
       "-c:a", "mp3", // MP3 codec for audio compatibility
-      "-b:a", audioBitrate, // Audio bitrate
-      "-ac", "2", // Stereo audio
-      "-ar", "44100", // Sample rate
+      "-b:a", audioBitrate, // Bitrate optimized for speech recognition
+      "-ac", channels, // Mono audio - required for Whisper processing
+      "-ar", sampleRate, // 16kHz sample rate - Whisper's standard for optimal speech recognition
       "-y", this.getRecordingPath(), // Output file path
     ];
   }
@@ -601,35 +604,100 @@ export class MeetsBot extends Bot {
     await this.handleInfoPopup();
 
     try {
-      // UI patch: Find new people icon and click parent button
-      const hasPeopleIcon = await this.page.evaluate(() => {
-        const peopleButtonChild = Array.from(
-          document.querySelectorAll("i")
-        ).find((el) => el.textContent?.trim() === "people");
-        if (peopleButtonChild) {
-          const newPeopleButton = peopleButtonChild.closest("button");
-          if (newPeopleButton) {
-            newPeopleButton.click();
-            return true;
+      console.log("Attempting to open participants panel...");
+
+      // Strategy 1: Google symbols and text-based detection (PROVEN TO WORK)
+      const peopleButtonClicked = await this.page.evaluate(() => {
+        // Look for buttons that contain "people" icon text
+        const peopleButtons = Array.from(document.querySelectorAll("button")).filter(button => {
+          const text = button.textContent || '';
+          const html = button.innerHTML || '';
+
+          // Check if button contains "people" text or has people icon
+          const hasPeopleText = text.toLowerCase().includes('people');
+          const hasPeopleIcon = html.includes('>people<') ||
+                                html.includes('people') && (html.includes('google-symbols') || html.includes('<i'));
+
+          return hasPeopleText || hasPeopleIcon;
+        });
+
+        // Look for any element containing "people" text and find its parent button
+        const peopleTextElements = Array.from(document.querySelectorAll("*"))
+          .filter(el => {
+            const text = el.textContent?.trim() || '';
+            return text === "people" || (text.length < 20 && text.toLowerCase().includes("people"));
+          });
+
+        // Combine all candidates (prioritize direct button matches)
+        const allCandidates = [...peopleButtons, ...peopleTextElements];
+
+        for (let i = 0; i < allCandidates.length; i++) {
+          const element = allCandidates[i];
+
+          // Try multiple levels of parent traversal with null safety
+          let current = element;
+          for (let level = 0; level < 5; level++) {
+            if (!current) {
+              break;
+            }
+            if (current.tagName === 'BUTTON') {
+              try {
+                current.click();
+                return true;
+              } catch (e) {
+                console.log(`Failed to click button at level ${level}:`, e.message);
+              }
+            }
+            current = current.parentElement;
+          }
+
+          // Also try closest method
+          const closestButton = element.closest("button");
+          if (closestButton) {
+            try {
+              closestButton.click();
+              return true;
+            } catch (e) {
+              console.log(`Failed to click closest button for candidate ${i}:`, e.message);
+            }
           }
         }
+
         return false;
       });
 
-      if (hasPeopleIcon) {
-        console.log("Using new People button selector.");
+      if (peopleButtonClicked) {
+        console.log("Successfully clicked People button");
+        // Wait for the people panel to be visible
+        try {
+          await this.page.waitForSelector('[aria-label="Participants"], [data-panel="people"], .participants-panel', {
+            timeout: 5000,
+          });
+          console.log("People panel is now visible");
+        } catch (e) {
+          console.warn("People panel did not become visible after clicking button:", e.message);
+        }
       } else {
-        console.warn("People button not found, using fallback selector.");
-        await this.page.click(peopleButton);
+        console.warn("Could not find People button");
+
+        // Check if the people panel might already be open
+        const isPanelAlreadyOpen = await this.page.evaluate(() => {
+          const participantsPanel = document.querySelector('[aria-label="Participants"]');
+          return participantsPanel && participantsPanel.offsetParent !== null;
+        });
+
+        if (isPanelAlreadyOpen) {
+          console.log("People panel appears to be already open - continuing");
+        } else {
+          console.log("Bot will continue without participants panel access");
+          // Take a screenshot for debugging
+          await this.screenshot('people-button-not-found.png');
+        }
       }
 
-      // Wait for the people panel to be visible
-      await this.page.waitForSelector('[aria-label="Participants"]', {
-        state: "visible",
-      });
     } catch (error) {
-      console.warn("Could not click People button. Continuing anyways.");
-      }
+      console.warn("Could not click People button. Continuing anyways.", error.message);
+    }
 
     await this.page.exposeFunction("getParticipants", () => {
       return this.participants;

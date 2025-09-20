@@ -98,8 +98,8 @@ export const main = async () => {
 
     // Upload recording based on configuration
     if (shouldUseExternalSystemUpload(
-      useExternalUpload, 
-      botData.meetingInfo.externalMeetingId, 
+      useExternalUpload,
+      botData.meetingInfo.externalMeetingId,
       process.env.EXTERNAL_SYSTEM_BASE_URL
     )) {
       console.log("Starting upload to external system...");

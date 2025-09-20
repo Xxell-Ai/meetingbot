@@ -213,6 +213,24 @@ export async function deployBotKubernetes({
                         },
                       },
                     },
+                    {
+                      name: "EXTERNAL_SYSTEM_BASE_URL",
+                      valueFrom: {
+                        configMapKeyRef: {
+                          name: "meetingbot-config",
+                          key: "EXTERNAL_SYSTEM_BASE_URL",
+                        },
+                      },
+                    },
+                    {
+                      name: "EXTERNAL_SYSTEM_API_KEY",
+                      valueFrom: {
+                        secretKeyRef: {
+                          name: "meetingbot-secrets",
+                          key: "EXTERNAL_SYSTEM_API_KEY",
+                        },
+                      },
+                    },
                   ],
                   resources: {
                     requests: {

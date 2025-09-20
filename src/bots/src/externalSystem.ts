@@ -56,21 +56,11 @@ export async function uploadRecordingToExternalSystem(
     const fileExtension = contentType.split("/")[1];
     const fileName = `${bot.settings.meetingInfo.platform}-recording.${fileExtension}`;
     
+    // Only append the recording file to match MeetingRecordingSerializer
     form.append('recording', fileContent, {
       filename: fileName,
       contentType: contentType,
     });
-
-    // Add additional metadata
-    form.append('platform', bot.settings.meetingInfo.platform || 'unknown');
-    form.append('meetingTitle', bot.settings.meetingTitle);
-    form.append('botId', bot.settings.id.toString());
-    
-    // Add speaker timeframes if available
-    const speakerTimeframes = bot.getSpeakerTimeframes();
-    if (speakerTimeframes && speakerTimeframes.length > 0) {
-      form.append('speakerTimeframes', JSON.stringify(speakerTimeframes));
-    }
 
     // Construct the API endpoint URL
     const uploadUrl = `${baseUrl.replace(/\/$/, '')}/api/meetings/${externalMeetingId}/recording/`;
