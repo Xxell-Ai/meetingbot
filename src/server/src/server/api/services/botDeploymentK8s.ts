@@ -129,6 +129,11 @@ export async function deployBotKubernetes({
           },
           spec: {
             restartPolicy: "Never", // Jobs should not restart automatically
+            imagePullSecrets: [
+              {
+                name: "xxell-ai"
+              }
+            ],
             containers: [
               {
                 name: "bot",
