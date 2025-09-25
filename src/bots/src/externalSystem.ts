@@ -4,6 +4,39 @@ import FormData from "form-data";
 import fetch from "node-fetch";
 
 /**
+ * Retry utility with exponential backoff for external uploads
+ * @param fn Function to retry
+ * @param maxRetries Maximum number of retries
+ * @param baseDelay Base delay in milliseconds
+ * @returns Promise result
+ */
+async function retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+): Promise<T> {
+    let lastError: Error;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error as Error;
+
+            if (attempt === maxRetries) {
+                throw lastError;
+            }
+
+            const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Add jitter
+            console.log(`External upload attempt ${attempt + 1} failed: ${lastError.message}. Retrying in ${Math.round(delay)}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+
+    throw lastError!;
+}
+
+/**
  * Upload recording to external system API
  * @param bot Bot instance containing recording and configuration
  * @param externalMeetingId External meeting ID for the API endpoint
@@ -72,44 +105,51 @@ export async function uploadRecordingToExternalSystem(
 
     // Construct the API endpoint URL
     const uploadUrl = `${baseUrl.replace(/\/$/, '')}/api/meetings/${externalMeetingId}/recording/`;
-    console.log(`Uploading to external system: ${uploadUrl}`);
+    console.log(`Starting external system upload with retry mechanism: ${uploadUrl}`);
 
-    // Prepare headers
-    const headers: Record<string, string> = {
-      ...form.getHeaders(),
-    };
+    // Upload with retry mechanism
+    const responseData = await retryWithBackoff(async () => {
+      // Prepare headers
+      const headers: Record<string, string> = {
+        ...form.getHeaders(),
+      };
 
-    // Add API key if provided
-    if (apiKey) {
-      headers['Authorization'] = `Api-Key ${apiKey}`;
-    }
+      // Add API key if provided
+      if (apiKey) {
+        headers['Authorization'] = `Api-Key ${apiKey}`;
+      }
 
-    // Make the upload request
-    const response = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: headers,
-      body: form,
-    });
+      // Make the upload request
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: headers,
+        body: form,
+      });
 
-    if (!response.ok) {
-      throw new Error(`External system upload failed: ${response.status} ${response.statusText}`);
-    }
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'No response body');
+        throw new Error(`External system upload failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
 
-    const responseData = await response.text();
-    console.log(`Successfully uploaded recording to external system: ${uploadUrl}`);
+      const responseData = await response.text();
+      console.log(`✅ Successfully uploaded recording to external system: ${uploadUrl}`);
+      return responseData;
+    }, 3, 2000); // 3 retries, starting with 2s delay
+
     console.log(`External system response:`, responseData);
 
     // Clean up local file after successful upload
     try {
       await fsPromises.unlink(filePath);
-      console.log("Successfully cleaned up local recording file");
+      console.log("✅ Local recording file cleaned up successfully");
     } catch (cleanupError) {
-      console.warn("Warning: Could not clean up local file:", cleanupError);
+      console.warn("⚠️ Warning: Could not clean up local file:", cleanupError);
+      // Don't fail the upload if cleanup fails
     }
 
     return responseData;
   } catch (error) {
-    console.error("Error uploading to external system:", error);
+    console.error("❌ External system upload failed after all retries:", error);
     throw error;
   }
 }

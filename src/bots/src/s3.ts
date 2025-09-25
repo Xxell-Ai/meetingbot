@@ -4,6 +4,39 @@ import { Bot } from "./bot";
 import { randomUUID } from "crypto";
 
 /**
+ * Retry utility with exponential backoff
+ * @param fn Function to retry
+ * @param maxRetries Maximum number of retries
+ * @param baseDelay Base delay in milliseconds
+ * @returns Promise result
+ */
+async function retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+): Promise<T> {
+    let lastError: Error;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error as Error;
+
+            if (attempt === maxRetries) {
+                throw lastError;
+            }
+
+            const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Add jitter
+            console.log(`Attempt ${attempt + 1} failed: ${lastError.message}. Retrying in ${Math.round(delay)}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+
+    throw lastError!;
+}
+
+/**
  * Creates an S3 Connection to the bucket (works with both AWS S3 and DigitalOcean Spaces).
  * 
  * @param region AWS region or DO region
@@ -121,27 +154,36 @@ export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot, bucketNa
     }
 
     try {
-        const commandObjects = {
-            Bucket: finalBucketName,
-            Key: key,
-            Body: fileContent,
-            ContentType: contentType,
-        };
+        console.log(`Starting upload to ${finalBucketName} with retry mechanism...`);
 
-        const putCommand = new PutObjectCommand(commandObjects);
-        await s3Client.send(putCommand);
-        console.log(`Successfully uploaded recording to ${finalBucketName}: ${key}`);
+        // Upload with retry mechanism
+        await retryWithBackoff(async () => {
+            const commandObjects = {
+                Bucket: finalBucketName,
+                Key: key,
+                Body: fileContent,
+                ContentType: contentType,
+            };
 
-        // Clean up local file
-        await fsPromises.unlink(filePath);
+            const putCommand = new PutObjectCommand(commandObjects);
+            await s3Client.send(putCommand);
+            console.log(`✅ Successfully uploaded recording to ${finalBucketName}: ${key}`);
+        }, 3, 2000); // 3 retries, starting with 2s delay
+
+        // Clean up local file after successful upload
+        try {
+            await fsPromises.unlink(filePath);
+            console.log("✅ Local file cleaned up successfully");
+        } catch (cleanupError) {
+            console.warn("⚠️ Could not clean up local file:", cleanupError);
+            // Don't fail the upload if cleanup fails
+        }
 
         // Return the Upload Key
         return key;
 
     } catch (error) {
-        console.error("Error uploading to S3:", error);
+        console.error("❌ S3 upload failed after all retries:", error);
+        throw error; // Re-throw to let caller handle the error
     }
-
-    // No Upload
-    return '';
 }
