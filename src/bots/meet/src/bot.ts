@@ -189,8 +189,20 @@ export class MeetsBot extends Bot {
    * Run the bot to join the meeting and perform the meeting actions.
    */
   async run(): Promise<void> {
-    await this.joinMeeting();
-    await this.meetingActions();
+    try {
+      await this.joinMeeting();
+      console.log("✅ Successfully joined the meeting");
+
+      // Only start recording and meeting actions if join was successful
+      await this.meetingActions();
+
+    } catch (error) {
+      console.error("❌ Failed to join meeting:", error.message);
+      console.log("⚠️ Skipping recording and meeting actions due to join failure");
+
+      // Re-throw the error to indicate failure to the main process
+      throw error;
+    }
   }
 
   /**
@@ -337,13 +349,141 @@ export class MeetsBot extends Bot {
     await this.page.bringToFront(); //ensure active
 
     console.log("Waiting for the input field to be visible...");
-    await this.page.waitForSelector(enterNameField, { timeout: 15000 }); // If it can't find the enter name field in 15 seconds then something went wrong.
 
-    console.log("Found it. Waiting for 1 second...");
+    let nameFieldSelector: string | null = null;
+    let foundField = false;
+
+    // Standard Solution 1: Use modern Locator API with web-first assertions
+    try {
+      console.log("🔍 SOLUTION 1: Using modern Locator API with web-first assertions...");
+
+      const nameInputLocator = this.page.locator(enterNameField);
+
+      // Use web-first assertion - this is the recommended modern approach
+      await nameInputLocator.waitFor({ state: 'visible', timeout: 10000 });
+
+      // Additional check to ensure it's interactable
+      const element = await nameInputLocator.elementHandle();
+      if (element && await element.isEnabled()) {
+        nameFieldSelector = enterNameField;
+        foundField = true;
+        console.log("✅ SOLUTION 1 SUCCESS: Found primary name field with modern Locator API");
+      } else {
+        console.log("❌ SOLUTION 1: Element visible but not enabled");
+      }
+    } catch (error) {
+      console.log("❌ SOLUTION 1 FAILED:", error.message);
+    }
+
+    // Standard Solution 2: Race condition workaround - wait for attached then visible
+    if (!foundField) {
+      try {
+        console.log("🔍 SOLUTION 2: Race condition workaround - attached then visible...");
+
+        // First wait for element to be attached to DOM
+        await this.page.waitForSelector(enterNameField, { state: 'attached', timeout: 5000 });
+        console.log("Element attached to DOM");
+
+        // Then explicitly wait for it to become visible
+        await this.page.waitForSelector(enterNameField, { state: 'visible', timeout: 5000 });
+        console.log("Element became visible");
+
+        // Verify it's actionable
+        const element = await this.page.$(enterNameField);
+        if (element && await element.isVisible() && await element.isEnabled()) {
+          nameFieldSelector = enterNameField;
+          foundField = true;
+          console.log("✅ SOLUTION 2 SUCCESS: Race condition workaround worked");
+        } else {
+          console.log("❌ SOLUTION 2: Element visible but not actionable");
+        }
+      } catch (error) {
+        console.log("❌ SOLUTION 2 FAILED:", error.message);
+      }
+    }
+
+    // Standard Solution 3: Multiple state checks with polling
+    if (!foundField) {
+      try {
+        console.log("🔍 SOLUTION 3: Polling approach with multiple state checks...");
+
+        let attempts = 0;
+        const maxAttempts = 8;
+
+        while (attempts < maxAttempts && !foundField) {
+          await this.page.waitForTimeout(1000); // Wait between attempts
+
+          const element = await this.page.$(enterNameField);
+          if (element) {
+            const isVisible = await element.isVisible();
+            const isEnabled = await element.isEnabled();
+            const boundingBox = await element.boundingBox();
+
+            console.log(`Attempt ${attempts + 1}: visible=${isVisible}, enabled=${isEnabled}, hasBox=${!!boundingBox}`);
+
+            if (isVisible && isEnabled && boundingBox) {
+              nameFieldSelector = enterNameField;
+              foundField = true;
+              console.log("✅ SOLUTION 3 SUCCESS: Polling found actionable element");
+              break;
+            }
+          }
+
+          attempts++;
+        }
+
+        if (!foundField) {
+          console.log("❌ SOLUTION 3: All polling attempts failed");
+        }
+      } catch (error) {
+        console.log("❌ SOLUTION 3 FAILED:", error.message);
+      }
+    }
+
+    // If primary selector fails, try alternatives
+    if (!foundField) {
+      for (const selector of alternativeNameFields) {
+        try {
+          console.log(`Trying alternative selector: ${selector}`);
+          await this.page.waitForSelector(selector, { timeout: 2000, state: 'visible' });
+          // Verify this is actually a name input by checking if it's visible and not disabled
+          const element = await this.page.$(selector);
+          if (element) {
+            const isVisible = await element.isVisible();
+            const isEnabled = await element.isEnabled();
+            if (isVisible && isEnabled) {
+              nameFieldSelector = selector;
+              foundField = true;
+              console.log(`Found working name field selector: ${selector}`);
+              break;
+            } else {
+              console.log(`Alternative selector ${selector} found but not interactable (visible: ${isVisible}, enabled: ${isEnabled})`);
+            }
+          }
+        } catch (error) {
+          console.log(`Alternative selector ${selector} failed: ${error}`);
+          continue;
+        }
+      }
+    }
+
+    if (!foundField || !nameFieldSelector) {
+      // Take a screenshot for debugging
+      try {
+        await this.page.screenshot({ path: '/tmp/debug_no_name_field.png', fullPage: true });
+        console.log("Debug screenshot saved to /tmp/debug_no_name_field.png");
+      } catch (screenshotError) {
+        console.log("Could not take debug screenshot:", screenshotError);
+      }
+
+      throw new Error("Could not find any working name input field after trying all selectors");
+    }
+
+    console.log("Found name field. Waiting for 1 second...");
     await this.page.waitForTimeout(randomDelay(1000));
 
     console.log("Filling the input field with the name...");
-    await this.page.fill(enterNameField, name);
+    await this.page.fill(nameFieldSelector, name);
 
     console.log('Turning Off Camera and Microphone ...');
     try {
@@ -410,27 +550,74 @@ export class MeetsBot extends Bot {
       ]
     }
 
-    // Audio-only recording parameters optimized for speech recognition (Whisper-compatible)
-    console.log('Loading Dockerized FFMPEG Params for Audio-Only Recording (Whisper-Optimized) ...')
+    // Audio-only recording parameters optimized for reliability and quality
+    console.log('Loading Dockerized FFMPEG Params for Audio-Only Recording (Quality-Optimized) ...')
 
     const audioInputFormat = "pulse";
     const audioSource = "default";
-    // Optimized for speech recognition based on OpenAI Whisper standards
-    const audioBitrate = process.env.AUDIO_BITRATE || "24k"; // Optimized for 16kHz speech (lower bitrate works well with lower sample rate)
-    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "16000"; // Whisper standard: 16kHz (optimal for speech)
-    const channels = process.env.AUDIO_CHANNELS || "1"; // Mono - Whisper processes mono audio
+
+    // Optimized parameters for better audio quality and system stability
+    const audioBitrate = process.env.AUDIO_BITRATE || "64k"; // Higher bitrate for better quality
+    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "22050"; // Higher sample rate for better quality
+    const channels = process.env.AUDIO_CHANNELS || "1"; // Mono - sufficient for speech
+    const threadQueueSize = process.env.THREAD_QUEUE_SIZE || "1024"; // Larger buffer for stability
+
+    console.log(`Audio settings: bitrate=${audioBitrate}, sampleRate=${sampleRate}, channels=${channels}, queueSize=${threadQueueSize}`);
 
     return [
-      '-v', 'verbose', // Verbose logging for debugging
-      "-thread_queue_size", "512", // Increase thread queue size to handle input buffering
+      '-v', 'warning', // Less verbose logging to reduce CPU overhead
+      "-thread_queue_size", threadQueueSize, // Larger thread queue for better buffering
+      "-probesize", "32M", // Larger probe size for better stream detection
+      "-analyzeduration", "0", // Skip analysis to start recording faster
       "-f", audioInputFormat,
       "-i", audioSource,
-      "-c:a", "mp3", // MP3 codec for audio compatibility
-      "-b:a", audioBitrate, // Bitrate optimized for speech recognition
-      "-ac", channels, // Mono audio - required for Whisper processing
-      "-ar", sampleRate, // 16kHz sample rate - Whisper's standard for optimal speech recognition
+      "-c:a", "mp3", // MP3 codec for compatibility
+      "-b:a", audioBitrate, // Higher bitrate for quality
+      "-ac", channels, // Audio channels
+      "-ar", sampleRate, // Sample rate
+      "-af", "highpass=f=80,lowpass=f=8000", // Audio filters to reduce noise
+      "-buffer_size", "512k", // Increase buffer size
       "-y", this.getRecordingPath(), // Output file path
     ];
+  }
+
+  /**
+   * Log system resources to help diagnose audio recording issues
+   */
+  logSystemResources() {
+    try {
+      const os = require('os');
+
+      // CPU Information
+      const cpuCount = os.cpus().length;
+      const loadAvg = os.loadavg();
+
+      // Memory Information
+      const totalMem = Math.round(os.totalmem() / 1024 / 1024 / 1024 * 100) / 100; // GB
+      const freeMem = Math.round(os.freemem() / 1024 / 1024 / 1024 * 100) / 100; // GB
+      const usedMem = Math.round((totalMem - freeMem) * 100) / 100; // GB
+      const memUsagePercent = Math.round((usedMem / totalMem) * 100);
+
+      console.log('📊 SYSTEM RESOURCES:');
+      console.log(`   CPU Cores: ${cpuCount}`);
+      console.log(`   Load Average: ${loadAvg[0].toFixed(2)}, ${loadAvg[1].toFixed(2)}, ${loadAvg[2].toFixed(2)}`);
+      console.log(`   Memory: ${usedMem}GB / ${totalMem}GB (${memUsagePercent}%)`);
+      console.log(`   Free Memory: ${freeMem}GB`);
+
+      // Warning thresholds
+      if (memUsagePercent > 80) {
+        console.warn('⚠️  HIGH MEMORY USAGE - May cause choppy audio recording');
+      }
+      if (loadAvg[0] > cpuCount) {
+        console.warn('⚠️  HIGH CPU LOAD - May cause choppy audio recording');
+      }
+      if (freeMem < 0.5) {
+        console.warn('⚠️  LOW FREE MEMORY - Consider increasing container memory');
+      }
+
+    } catch (error) {
+      console.log('Could not read system resources:', error.message);
+    }
   }
 
   /**
@@ -446,18 +633,44 @@ export class MeetsBot extends Bot {
     console.log('Attempting to start the recording ... @', this.getRecordingPath());
     if (this.ffmpegProcess) return console.log('Recording already started.');
 
+    // Log system resources before starting
+    this.logSystemResources();
+
     this.ffmpegProcess = spawn('ffmpeg', this.getFFmpegParams());
 
     console.log('Spawned a subprocess to record: pid=', this.ffmpegProcess.pid);
 
-    // Report any data / errors (DEBUG, since it also prints that data is available).
+    // Monitor FFmpeg output for quality issues and recording status
     this.ffmpegProcess.stderr.on('data', (data) => {
-      // console.error(`ffmpeg: ${data}`);
+      const output = data.toString();
 
       // Log that we got data, and the recording started.
       if (!this.startedRecording) {
-        console.log('Recording Started.');
+        console.log('✅ Recording Started.');
         this.startedRecording = true;
+      }
+
+      // Check for audio quality warnings
+      if (output.includes('buffer underrun') || output.includes('queue overflow')) {
+        console.warn('⚠️ AUDIO BUFFER ISSUE: May cause choppy recording - consider reducing quality settings');
+      }
+      if (output.includes('dropping') || output.includes('skipped')) {
+        console.warn('⚠️ AUDIO FRAMES DROPPED: System may be under high load');
+      }
+      if (output.includes('real-time factor') && output.includes('< 1')) {
+        console.warn('⚠️ SLOW PROCESSING: Real-time factor below 1.0 - system struggling to keep up');
+      }
+
+      // Log progress periodically (every ~30 seconds)
+      if (output.includes('time=')) {
+        const timeMatch = output.match(/time=(\d{2}:\d{2}:\d{2})/);
+        if (timeMatch) {
+          const recordingTime = timeMatch[1];
+          const minutes = parseInt(recordingTime.split(':')[1]);
+          if (minutes > 0 && minutes % 1 === 0) { // Log every minute
+            console.log(`🎥 Recording progress: ${recordingTime}`);
+          }
+        }
       }
     });
 

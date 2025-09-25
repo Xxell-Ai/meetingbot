@@ -87,53 +87,81 @@ export const main = async () => {
   // Report READY_TO_DEPLOY event
   await reportEvent(botId, EventCode.READY_TO_DEPLOY);
 
+  let botRunSuccessfully = false;
+
   try {
     // Run the bot
-    await bot.run().catch(async (error) => {
-
-      console.error("Error running bot:", error);
-      await reportEvent(botId, EventCode.FATAL, {
-        description: (error as Error).message,
-      });
-
-      // Check what's on the screen in case of an error
-      bot.screenshot();
-
-      // **Ensure** the bot cleans up its resources after a breaking error
-      await bot.endLife();
+    await bot.run();
+    botRunSuccessfully = true;
+    console.log("✅ Bot completed successfully");
+  } catch (error) {
+    console.error("❌ Error running bot:", error.message);
+    await reportEvent(botId, EventCode.FATAL, {
+      description: (error as Error).message,
     });
 
-    // Upload recording based on configuration
-    if (shouldUseExternalSystemUpload(
-      useExternalUpload,
-      botData.meetingInfo.externalMeetingId,
-      process.env.EXTERNAL_SYSTEM_BASE_URL
-    )) {
-      console.log("Starting upload to external system...");
-      try {
-        const externalResponse = await uploadRecordingToExternalSystem(
-          bot,
-          botData.meetingInfo.externalMeetingId!,
-          process.env.EXTERNAL_SYSTEM_BASE_URL!,
-          process.env.EXTERNAL_SYSTEM_API_KEY
-        );
-        key = `external_system_upload_${botData.meetingInfo.externalMeetingId}`;
-        console.log("External system upload completed:", externalResponse);
-      } catch (error) {
-        console.error("External system upload failed, falling back to S3:", error);
-        if (s3Client) {
-          console.log("Starting fallback upload to S3...");
-          key = await uploadRecordingToS3(s3Client, bot);
-        } else {
-          throw new Error("External system upload failed and no S3 client available for fallback");
-        }
-      }
-    } else if (s3Client) {
-      console.log(`Starting upload to DigitalOcean Spaces...`);
-      key = await uploadRecordingToS3(s3Client, bot);
-    } else {
-      throw new Error("No upload method configured. Enable external system upload or configure S3 storage.");
+    // Check what's on the screen in case of an error
+    try {
+      await bot.screenshot();
+    } catch (screenshotError) {
+      console.log("Could not take error screenshot:", screenshotError.message);
     }
+
+    // **Ensure** the bot cleans up its resources after a breaking error
+    await bot.endLife();
+
+    console.log("⚠️ Skipping upload due to bot execution failure");
+    return; // Exit early, don't attempt upload
+  }
+
+  // Only attempt upload if bot ran successfully and recording exists
+  if (botRunSuccessfully) {
+    try {
+      // Upload recording based on configuration
+      if (shouldUseExternalSystemUpload(
+        useExternalUpload,
+        botData.meetingInfo.externalMeetingId,
+        process.env.EXTERNAL_SYSTEM_BASE_URL
+      )) {
+        console.log("Starting upload to external system...");
+        try {
+          const externalResponse = await uploadRecordingToExternalSystem(
+            bot,
+            botData.meetingInfo.externalMeetingId!,
+            process.env.EXTERNAL_SYSTEM_BASE_URL!,
+            process.env.EXTERNAL_SYSTEM_API_KEY
+          );
+          key = `external_system_upload_${botData.meetingInfo.externalMeetingId}`;
+          console.log("External system upload completed:", externalResponse);
+        } catch (error) {
+          console.error("External system upload failed, falling back to DigitalOcean Spaces:", error);
+          if (s3Client) {
+            console.log("Starting fallback upload to DigitalOcean Spaces...");
+            try {
+              key = await uploadRecordingToS3(s3Client, bot);
+              console.log("Fallback upload to DigitalOcean Spaces completed successfully");
+            } catch (fallbackError) {
+              console.error("Fallback upload to DigitalOcean Spaces also failed:", fallbackError.message);
+              throw new Error(`External system upload failed: ${error.message}. Fallback to DigitalOcean Spaces also failed: ${fallbackError.message}`);
+            }
+          } else {
+            throw new Error(`External system upload failed: ${error.message}. No DigitalOcean Spaces client available for fallback. Check DO_SPACES credentials.`);
+          }
+        }
+      } else if (s3Client) {
+        console.log(`Starting upload to DigitalOcean Spaces...`);
+        key = await uploadRecordingToS3(s3Client, bot);
+      } else {
+        throw new Error("No upload method configured. Enable external system upload or configure S3 storage.");
+      }
+    } catch (uploadError) {
+      console.error("❌ Upload failed:", uploadError.message);
+      await reportEvent(botId, EventCode.FATAL, {
+        description: `Upload failed: ${uploadError.message}`,
+      });
+      throw uploadError;
+    }
+  }
 
 
   } catch (error) {
