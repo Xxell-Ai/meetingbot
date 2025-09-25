@@ -26,6 +26,15 @@ const joinNowButton = '//button[.//span[text()="Join now"]]';
 const gotKickedDetector = '//button[.//span[text()="Return to home screen"]]';
 const leaveButton = `//button[@aria-label="Leave call"]`;
 const peopleButton = `//button[@aria-label="People"]`;
+const alternativePeopleSelectors = [
+  '//button[@aria-label="Show everyone"]',
+  '//button[contains(@aria-label, "participant")]',
+  '//button[contains(@aria-label, "people")]',
+  '//button[@data-tooltip-id="people"]',
+  '//button[.//span[text()="People"]]',
+  'button[aria-label*="People"]',
+  'button[data-tooltip*="people" i]'
+];
 const onePersonRemainingField = '//span[.//div[text()="Contributors"]]//div[text()="1"]';
 const muteButton = `[aria-label*="Turn off microphone"]`; // *= -> conatins
 const cameraOffButton = `[aria-label*="Turn off camera"]`;
@@ -606,68 +615,114 @@ export class MeetsBot extends Bot {
     try {
       console.log("Attempting to open participants panel...");
 
-      // Strategy 1: Google symbols and text-based detection (PROVEN TO WORK)
-      const peopleButtonClicked = await this.page.evaluate(() => {
-        // Look for buttons that contain "people" icon text
-        const peopleButtons = Array.from(document.querySelectorAll("button")).filter(button => {
-          const text = button.textContent || '';
-          const html = button.innerHTML || '';
+      let peopleButtonClicked = false;
 
-          // Check if button contains "people" text or has people icon
-          const hasPeopleText = text.toLowerCase().includes('people');
-          const hasPeopleIcon = html.includes('>people<') ||
-                                html.includes('people') && (html.includes('google-symbols') || html.includes('<i'));
+      // Strategy 1: Try primary People button selector
+      try {
+        console.log("STRATEGY 1: Trying primary People button selector...");
+        await this.page.waitForSelector(peopleButton, { timeout: 2000 });
+        await this.page.click(peopleButton);
+        peopleButtonClicked = true;
+        console.log("✅ STRATEGY 1 SUCCESS: Primary People button clicked successfully");
+      } catch (e) {
+        console.log("❌ STRATEGY 1 FAILED: Primary People button selector failed:", e.message);
+      }
 
-          return hasPeopleText || hasPeopleIcon;
-        });
-
-        // Look for any element containing "people" text and find its parent button
-        const peopleTextElements = Array.from(document.querySelectorAll("*"))
-          .filter(el => {
-            const text = el.textContent?.trim() || '';
-            return text === "people" || (text.length < 20 && text.toLowerCase().includes("people"));
-          });
-
-        // Combine all candidates (prioritize direct button matches)
-        const allCandidates = [...peopleButtons, ...peopleTextElements];
-
-        for (let i = 0; i < allCandidates.length; i++) {
-          const element = allCandidates[i];
-
-          // Try multiple levels of parent traversal with null safety
-          let current = element;
-          for (let level = 0; level < 5; level++) {
-            if (!current) {
+      // Strategy 2: Try alternative selectors
+      if (!peopleButtonClicked) {
+        console.log("STRATEGY 2: Trying alternative People button selectors...");
+        for (let i = 0; i < alternativePeopleSelectors.length; i++) {
+          const selector = alternativePeopleSelectors[i];
+          try {
+            console.log(`STRATEGY 2.${i + 1}: Trying selector: ${selector}`);
+            await this.page.waitForSelector(selector, { timeout: 1500 });
+            const element = await this.page.$(selector);
+            if (element && await element.isVisible() && await element.isEnabled()) {
+              await element.click();
+              peopleButtonClicked = true;
+              console.log(`✅ STRATEGY 2.${i + 1} SUCCESS: People button clicked with selector: ${selector}`);
               break;
+            } else {
+              console.log(`❌ STRATEGY 2.${i + 1} FAILED: Element not visible/enabled for selector: ${selector}`);
             }
-            if (current.tagName === 'BUTTON') {
-              try {
-                current.click();
-                return true;
-              } catch (e) {
-                console.log(`Failed to click button at level ${level}:`, e.message);
-              }
-            }
-            current = current.parentElement;
-          }
-
-          // Also try closest method
-          const closestButton = element.closest("button");
-          if (closestButton) {
-            try {
-              closestButton.click();
-              return true;
-            } catch (e) {
-              console.log(`Failed to click closest button for candidate ${i}:`, e.message);
-            }
+          } catch (e) {
+            console.log(`❌ STRATEGY 2.${i + 1} FAILED: Selector ${selector} failed:`, e.message);
+            continue;
           }
         }
+      }
 
-        return false;
-      });
+      // Strategy 3: Google symbols and text-based detection (PROVEN TO WORK)
+      if (!peopleButtonClicked) {
+        console.log("STRATEGY 3: Trying text-based and icon-based detection...");
+        peopleButtonClicked = await this.page.evaluate(() => {
+          // Look for buttons that contain "people" icon text
+          const peopleButtons = Array.from(document.querySelectorAll("button")).filter(button => {
+            const text = button.textContent || '';
+            const html = button.innerHTML || '';
+
+            // Check if button contains "people" text or has people icon
+            const hasPeopleText = text.toLowerCase().includes('people');
+            const hasPeopleIcon = html.includes('>people<') ||
+                                  html.includes('people') && (html.includes('google-symbols') || html.includes('<i'));
+
+            return hasPeopleText || hasPeopleIcon;
+          });
+
+          // Look for any element containing "people" text and find its parent button
+          const peopleTextElements = Array.from(document.querySelectorAll("*"))
+            .filter(el => {
+              const text = el.textContent?.trim() || '';
+              return text === "people" || (text.length < 20 && text.toLowerCase().includes("people"));
+            });
+
+          // Combine all candidates (prioritize direct button matches)
+          const allCandidates = [...peopleButtons, ...peopleTextElements];
+
+          for (let i = 0; i < allCandidates.length; i++) {
+            const element = allCandidates[i];
+
+            // Try multiple levels of parent traversal with null safety
+            let current = element;
+            for (let level = 0; level < 5; level++) {
+              if (!current) {
+                break;
+              }
+              if (current.tagName === 'BUTTON') {
+                try {
+                  current.click();
+                  return true;
+                } catch (e) {
+                  console.log(`Failed to click button at level ${level}:`, e.message);
+                }
+              }
+              current = current.parentElement;
+            }
+
+            // Also try closest method
+            const closestButton = element.closest("button");
+            if (closestButton) {
+              try {
+                closestButton.click();
+                return true;
+              } catch (e) {
+                console.log(`Failed to click closest button for candidate ${i}:`, e.message);
+              }
+            }
+          }
+
+          return false;
+        });
+
+        if (peopleButtonClicked) {
+          console.log("✅ STRATEGY 3 SUCCESS: People button clicked via text-based detection");
+        } else {
+          console.log("❌ STRATEGY 3 FAILED: Text-based detection could not find People button");
+        }
+      }
 
       if (peopleButtonClicked) {
-        console.log("Successfully clicked People button");
+        console.log("🎉 PEOPLE BUTTON DETECTION SUCCESSFUL - Opening participants panel...");
         // Wait for the people panel to be visible
         try {
           await this.page.waitForSelector('[aria-label="Participants"], [data-panel="people"], .participants-panel', {
@@ -678,7 +733,7 @@ export class MeetsBot extends Bot {
           console.warn("People panel did not become visible after clicking button:", e.message);
         }
       } else {
-        console.warn("Could not find People button");
+        console.warn("❌ ALL STRATEGIES FAILED: Could not find People button after trying all methods");
 
         // Check if the people panel might already be open
         const isPanelAlreadyOpen = await this.page.evaluate(() => {
@@ -687,9 +742,10 @@ export class MeetsBot extends Bot {
         });
 
         if (isPanelAlreadyOpen) {
-          console.log("People panel appears to be already open - continuing");
+          console.log("ℹ️  People panel appears to be already open - continuing");
         } else {
-          console.log("Bot will continue without participants panel access");
+          console.log("⚠️  Bot will continue without participants panel access");
+          console.log("📸 Taking debug screenshot for analysis...");
           // Take a screenshot for debugging
           await this.screenshot('people-button-not-found.png');
         }

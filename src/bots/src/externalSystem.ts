@@ -54,7 +54,15 @@ export async function uploadRecordingToExternalSystem(
     const form = new FormData();
     const contentType = bot.getContentType();
     const fileExtension = contentType.split("/")[1];
-    const fileName = `${bot.settings.meetingInfo.platform}-recording.${fileExtension}`;
+
+    // Create descriptive filename with timestamp and meeting info
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + '_' +
+                      new Date().toISOString().replace(/[:.]/g, '-').split('T')[1].split('.')[0];
+    const meetingInfo = bot.settings.meetingInfo;
+    const platform = meetingInfo.platform || 'unknown';
+    const meetingId = meetingInfo.externalMeetingId || meetingInfo.id || 'no-id';
+
+    const fileName = `${timestamp}_${platform}_${meetingId}_recording.${fileExtension}`;
     
     // Only append the recording file to match MeetingRecordingSerializer
     form.append('recording', fileContent, {

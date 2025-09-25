@@ -99,11 +99,19 @@ export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot, bucketNa
         }
     }
 
-    // Create UUID and initialize key
+    // Create descriptive filename with timestamp and meeting info
     const uuid = randomUUID();
     const contentType = bot.getContentType();
-    const key = `recordings/${uuid}-${bot.settings.meetingInfo.platform
-        }-recording.${contentType.split("/")[1]}`;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + '_' +
+                      new Date().toISOString().replace(/[:.]/g, '-').split('T')[1].split('.')[0];
+
+    // Extract meeting info for better naming
+    const meetingInfo = bot.settings.meetingInfo;
+    const platform = meetingInfo.platform || 'unknown';
+    const meetingId = meetingInfo.externalMeetingId || meetingInfo.id || 'no-id';
+    const fileExtension = contentType.split("/")[1];
+
+    const key = `recordings/${timestamp}_${platform}_${meetingId}_${uuid.split('-')[0]}.${fileExtension}`;
 
     // Use DigitalOcean Spaces bucket
     const finalBucketName = bucketName || process.env.DO_SPACES_BUCKET;

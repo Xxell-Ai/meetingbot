@@ -48,18 +48,25 @@ export const main = async () => {
   // Declare key variable at the top level of the function
   let key: string = "";
 
-  // Initialize DigitalOcean Spaces client (if not using external upload)
+  // Initialize DigitalOcean Spaces client (needed for fallback even with external upload)
   let s3Client = null;
-  if (!useExternalUpload) {
+  try {
     s3Client = createS3Client(
-      process.env.DO_SPACES_REGION!, 
+      process.env.DO_SPACES_REGION!,
       process.env.AWS_ACCESS_KEY_ID, // DO Spaces uses same access key env vars
-      process.env.AWS_SECRET_ACCESS_KEY, 
+      process.env.AWS_SECRET_ACCESS_KEY,
       process.env.DO_SPACES_ENDPOINT!
     );
-    
-    if (!s3Client) {
-      throw new Error("Failed to create DigitalOcean Spaces client");
+
+    if (s3Client) {
+      console.log("DigitalOcean Spaces client initialized successfully");
+    } else {
+      console.warn("Failed to create DigitalOcean Spaces client - fallback upload will not be available");
+    }
+  } catch (error) {
+    console.warn("Could not initialize DigitalOcean Spaces client:", error);
+    if (!useExternalUpload) {
+      throw new Error("Failed to create DigitalOcean Spaces client and external upload is not configured");
     }
   }
 
