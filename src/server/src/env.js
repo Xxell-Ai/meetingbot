@@ -54,7 +54,7 @@ export const env = createEnv({
         ? z.preprocess(() => "https://sgp1.digitaloceanspaces.com", z.string())
         : z.string().default("https://sgp1.digitaloceanspaces.com"),
     KUBE_NAMESPACE: z.string().default("default"),
-    CURRENT_COMMIT_SHA: z.string().optional(),
+    BOT_IMAGE_TAG: z.string().optional(),
     // Deployment platform - Kubernetes only
     DEPLOYMENT_PLATFORM: z.enum(["KUBERNETES"]).default("KUBERNETES"),
     // Note: Using DigitalOcean Spaces only for Kubernetes deployment
@@ -94,7 +94,7 @@ export const env = createEnv({
     DO_SPACES_REGION: process.env.DO_SPACES_REGION,
     DO_SPACES_ENDPOINT: process.env.DO_SPACES_ENDPOINT,
     KUBE_NAMESPACE: process.env.KUBE_NAMESPACE,
-    CURRENT_COMMIT_SHA: process.env.CURRENT_COMMIT_SHA,
+    BOT_IMAGE_TAG: process.env.BOT_IMAGE_TAG,
     DEPLOYMENT_PLATFORM: process.env.DEPLOYMENT_PLATFORM,
     EXTERNAL_SYSTEM_BASE_URL: process.env.EXTERNAL_SYSTEM_BASE_URL,
     EXTERNAL_SYSTEM_API_KEY: process.env.EXTERNAL_SYSTEM_API_KEY,

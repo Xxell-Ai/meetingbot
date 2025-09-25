@@ -163,12 +163,12 @@ jobs:
             # Update image tag
             sed -i "s|tag:.*|tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}|g" "$VALUES_FILE"
 
-            # Update currentCommitSha for bot deployment
-            sed -i "s|currentCommitSha:.*|currentCommitSha: \"${{ steps.env.outputs.commit_sha }}\"|g" "$VALUES_FILE"
+            # Update botImageTag for bot deployment
+            sed -i "s|botImageTag:.*|botImageTag: \"${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}\"|g" "$VALUES_FILE"
 
             echo "Updated $VALUES_FILE with:"
             echo "  - Image tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}"
-            echo "  - Commit SHA: ${{ steps.env.outputs.commit_sha }}"
+            echo "  - Bot Image Tag: ${{ steps.env.outputs.tag_prefix }}-${{ steps.env.outputs.commit_sha }}"
           else
             echo "Values file $VALUES_FILE not found"
             exit 1

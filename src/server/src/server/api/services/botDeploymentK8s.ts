@@ -44,20 +44,17 @@ export function selectBotImage(meetingInfo: schema.MeetingInfo): string {
     }
   } else {
     console.log("Using DigitalOcean Container Registry images");
-    const commitSha = env.CURRENT_COMMIT_SHA?.substring(0, 7) ?? "latest";
+    const imageTag = env.BOT_IMAGE_TAG ?? "latest";
     const registryOwner = (process.env.DOCKER_REGISTRY_OWNER ?? "xxell-ai").toLowerCase();
-    console.log(`Registry: ${registryOwner}, Commit SHA: ${commitSha}`);
-
-    // Determine tag prefix based on environment/branch
-    const tagPrefix = env.NODE_ENV === "production" ? "prod" : "dev";
+    console.log(`Registry: ${registryOwner}, Image Tag: ${imageTag}`);
 
     switch (platform?.toLowerCase()) {
       case "google":
-        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-meet:${tagPrefix}-${commitSha}`;
+        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-meet:${imageTag}`;
       case "teams":
-        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-teams:${tagPrefix}-${commitSha}`;
+        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-teams:${imageTag}`;
       case "zoom":
-        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-zoom:${tagPrefix}-${commitSha}`;
+        return `registry.digitalocean.com/${registryOwner}/meetingbot-bots-zoom:${imageTag}`;
       default:
         throw new Error(`Unsupported platform: ${platform}`);
     }
