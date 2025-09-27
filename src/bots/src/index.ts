@@ -45,8 +45,10 @@ export const main = async () => {
   console.log("Received bot data:", botData);
   const botId = botData.id;
 
-  // Declare key variable at the top level of the function
+  // Declare variables at the top level of the function
   let key: string = "";
+  let bot: any = null;
+  let heartbeatController: AbortController = new AbortController();
 
   try {
     // Initialize DigitalOcean Spaces client (needed for fallback even with external upload)
@@ -72,10 +74,7 @@ export const main = async () => {
   }
 
   // Create the appropriate bot instance based on platform
-  const bot = await createBot(botData);
-
-  // Create AbortController for heartbeat
-  const heartbeatController = new AbortController();
+  bot = await createBot(botData);
 
   // Do not start heartbeat in development
   if (process.env.NODE_ENV !== "development") {
@@ -177,7 +176,7 @@ export const main = async () => {
   console.log("Bot execution completed, heartbeat stopped.");
 
   // Only report DONE if no error occurred
-  if (!hasErrorOccurred) {
+  if (!hasErrorOccurred && bot) {
     // Report final DONE event
     const speakerTimeframes = bot.getSpeakerTimeframes();
     console.debug("Speaker timeframes:", speakerTimeframes);
