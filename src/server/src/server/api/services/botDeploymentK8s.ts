@@ -236,12 +236,12 @@ export async function deployBotKubernetes({
                   ],
                   resources: {
                     requests: {
-                      cpu: "256m",
-                      memory: "500Mi",
-                    },
-                    limits: {
                       cpu: "500m",
                       memory: "1Gi",
+                    },
+                    limits: {
+                      cpu: "1000m",
+                      memory: "2Gi",
                     },
                   },
                 },
