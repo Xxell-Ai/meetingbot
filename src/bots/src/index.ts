@@ -48,7 +48,8 @@ export const main = async () => {
   // Declare key variable at the top level of the function
   let key: string = "";
 
-  // Initialize DigitalOcean Spaces client (needed for fallback even with external upload)
+  try {
+    // Initialize DigitalOcean Spaces client (needed for fallback even with external upload)
   let s3Client = null;
   try {
     s3Client = createS3Client(
@@ -162,7 +163,6 @@ export const main = async () => {
       throw uploadError;
     }
   }
-
 
   } catch (error) {
     hasErrorOccurred = true;
