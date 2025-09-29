@@ -65,6 +65,8 @@ export const env = createEnv({
     USE_EXTERNAL_SYSTEM_UPLOAD: z.boolean().default(false).describe("Whether to upload recordings to external system instead of S3"),
     // Docker registry configuration
     DOCKER_REGISTRY_OWNER: z.string().optional().describe("Docker registry owner/organization name"),
+    // GitHub user whitelist
+    ALLOWED_GITHUB_USERS: z.string().optional().describe("Comma-separated list of allowed GitHub usernames"),
   },
 
   /**
@@ -100,6 +102,7 @@ export const env = createEnv({
     EXTERNAL_SYSTEM_API_KEY: process.env.EXTERNAL_SYSTEM_API_KEY,
     USE_EXTERNAL_SYSTEM_UPLOAD: process.env.USE_EXTERNAL_SYSTEM_UPLOAD === 'true',
     DOCKER_REGISTRY_OWNER: process.env.DOCKER_REGISTRY_OWNER,
+    ALLOWED_GITHUB_USERS: process.env.ALLOWED_GITHUB_USERS,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
