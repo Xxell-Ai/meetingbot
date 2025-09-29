@@ -37,12 +37,13 @@ export const authConfig = {
   },
   adapter: DrizzleAdapter(db),
   callbacks: {
-    signIn: async ({ user, account, profile }) => {
+    signIn: async ({ user, profile }) => {
       // Check if ALLOWED_GITHUB_USERS is configured
       if (env.ALLOWED_GITHUB_USERS) {
         const allowedUsers = env.ALLOWED_GITHUB_USERS.split(',').map(u => u.trim().toLowerCase());
         // GitHub profile has a login field, fallback to user.name
-        const githubUsername = (profile as any)?.login?.toLowerCase() || user.name?.toLowerCase() || '';
+        const githubProfile = profile as { login?: string } | null;
+        const githubUsername = githubProfile?.login?.toLowerCase() ?? user.name?.toLowerCase() ?? '';
 
         if (!allowedUsers.includes(githubUsername)) {
           console.log(`Access denied for GitHub user: ${githubUsername}`);
