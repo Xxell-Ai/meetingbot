@@ -2,6 +2,7 @@ import { readFileSync, promises as fsPromises } from "fs";
 import { Bot } from "./bot";
 import FormData from "form-data";
 import fetch from "node-fetch";
+import { trimSilentEnd, cleanupTrimmedFile } from "./audioTrimmer";
 
 /**
  * Retry utility with exponential backoff for external uploads
@@ -45,15 +46,38 @@ async function retryWithBackoff<T>(
  * @returns Promise<string> Returns the response from external system or empty string on failure
  */
 export async function uploadRecordingToExternalSystem(
-  bot: Bot, 
+  bot: Bot,
   externalMeetingId: string,
   baseUrl: string,
   apiKey?: string
 ): Promise<string> {
   console.log(`Starting upload to external system for meeting: ${externalMeetingId}`);
-  
+
+  // Get the original file path
+  const originalFilePath = bot.getRecordingPath();
+
+  // Get the everyoneLeftTimeout from bot settings to determine how much to trim
+  const everyoneLeftTimeout = bot.settings.automaticLeave?.everyoneLeftTimeout ?? 0;
+
+  // Trim silent end if timeout is configured
+  let filePath = originalFilePath;
+  let isTrimmed = false;
+
+  if (everyoneLeftTimeout > 0) {
+      console.log(`Trimming ${everyoneLeftTimeout}ms of silence from end of recording for external upload`);
+      try {
+          filePath = await trimSilentEnd(originalFilePath, everyoneLeftTimeout);
+          isTrimmed = filePath !== originalFilePath;
+          if (isTrimmed) {
+              console.log(`Using trimmed file for external upload: ${filePath}`);
+          }
+      } catch (error) {
+          console.warn("Failed to trim audio for external upload, using original file:", error);
+          filePath = originalFilePath;
+      }
+  }
+
   // Attempt to read the file path. Allow for time for the file to become available.
-  const filePath = bot.getRecordingPath();
   let fileContent: Buffer;
   let i = 10;
 
@@ -138,10 +162,16 @@ export async function uploadRecordingToExternalSystem(
 
     console.log(`External system response:`, responseData);
 
-    // Clean up local file after successful upload
+    // Clean up local files after successful upload
     try {
-      await fsPromises.unlink(filePath);
-      console.log("✅ Local recording file cleaned up successfully");
+      // Clean up the original file
+      await fsPromises.unlink(originalFilePath);
+      console.log("✅ Original recording file cleaned up successfully");
+
+      // Clean up trimmed file if it was created
+      if (isTrimmed) {
+          cleanupTrimmedFile(filePath);
+      }
     } catch (cleanupError) {
       console.warn("⚠️ Warning: Could not clean up local file:", cleanupError);
       // Don't fail the upload if cleanup fails

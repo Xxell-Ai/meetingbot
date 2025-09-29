@@ -2,6 +2,7 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { readFileSync, promises as fsPromises } from "fs";
 import { Bot } from "./bot";
 import { randomUUID } from "crypto";
+import { trimSilentEnd, cleanupTrimmedFile } from "./audioTrimmer";
 
 /**
  * Retry utility with exponential backoff
@@ -93,8 +94,31 @@ export function createS3Client(
  */
 export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot, bucketName?: string): Promise<string> {
 
+    // Get the original file path
+    const originalFilePath = bot.getRecordingPath();
+
+    // Get the everyoneLeftTimeout from bot settings to determine how much to trim
+    const everyoneLeftTimeout = bot.settings.automaticLeave?.everyoneLeftTimeout ?? 0;
+
+    // Trim silent end if timeout is configured
+    let filePath = originalFilePath;
+    let isTrimmed = false;
+
+    if (everyoneLeftTimeout > 0) {
+        console.log(`Trimming ${everyoneLeftTimeout}ms of silence from end of recording`);
+        try {
+            filePath = await trimSilentEnd(originalFilePath, everyoneLeftTimeout);
+            isTrimmed = filePath !== originalFilePath;
+            if (isTrimmed) {
+                console.log(`Using trimmed file: ${filePath}`);
+            }
+        } catch (error) {
+            console.warn("Failed to trim audio, using original file:", error);
+            filePath = originalFilePath;
+        }
+    }
+
     // Attempt to read the file path. Allow for time for the file to become available.
-    const filePath = bot.getRecordingPath();
     let fileContent: Buffer;
     let i = 10;
 
@@ -170,10 +194,16 @@ export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot, bucketNa
             console.log(`✅ Successfully uploaded recording to ${finalBucketName}: ${key}`);
         }, 3, 2000); // 3 retries, starting with 2s delay
 
-        // Clean up local file after successful upload
+        // Clean up local files after successful upload
         try {
-            await fsPromises.unlink(filePath);
-            console.log("✅ Local file cleaned up successfully");
+            // Clean up the original file
+            await fsPromises.unlink(originalFilePath);
+            console.log("✅ Original file cleaned up successfully");
+
+            // Clean up trimmed file if it was created
+            if (isTrimmed) {
+                cleanupTrimmedFile(filePath);
+            }
         } catch (cleanupError) {
             console.warn("⚠️ Could not clean up local file:", cleanupError);
             // Don't fail the upload if cleanup fails
