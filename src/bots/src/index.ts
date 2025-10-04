@@ -95,6 +95,7 @@ export const main = async () => {
     botRunSuccessfully = true;
     console.log("✅ Bot completed successfully");
   } catch (error) {
+    hasErrorOccurred = true;
     console.error("❌ Error running bot:", error.message);
     await reportEvent(botId, EventCode.FATAL, {
       description: (error as Error).message,
@@ -111,7 +112,18 @@ export const main = async () => {
     await bot.endLife();
 
     console.log("⚠️ Skipping upload due to bot execution failure");
-    return; // Exit early, don't attempt upload
+
+    // For immediate failures (like join errors), exit immediately after cleanup
+    console.log("Exiting immediately due to fatal error");
+    heartbeatController.abort();
+
+    // Force exit to prevent hanging
+    setTimeout(() => {
+      console.log("Force exiting due to fatal error");
+      process.exit(1);
+    }, 1000);
+
+    process.exit(1);
   }
 
   // Only attempt upload if bot ran successfully and recording exists
@@ -184,6 +196,15 @@ export const main = async () => {
   }
 
   // Exit with appropriate code
+  console.log(`Exiting with code: ${hasErrorOccurred ? 1 : 0}`);
+
+  // Force exit after a short delay to ensure cleanup operations complete
+  setTimeout(() => {
+    console.log("Force exiting process");
+    process.exit(hasErrorOccurred ? 1 : 0);
+  }, 2000);
+
+  // Try graceful exit first
   process.exit(hasErrorOccurred ? 1 : 0);
 };
 
