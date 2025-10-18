@@ -72,7 +72,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        bot: [meet]
+        bot: [meet, zoom]
 
     steps:
       - name: Checkout repository
