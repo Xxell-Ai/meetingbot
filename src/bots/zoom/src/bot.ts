@@ -1,25 +1,59 @@
 import fs from "fs";
-import puppeteer, { Page } from "puppeteer";
+import puppeteer, { Page, Frame, ElementHandle } from "puppeteer";
 import { launch, getStream, wss } from "puppeteer-stream";
 import { BotConfig, EventCode, WaitingRoomTimeoutError, SpeakerTimeframe } from "../../src/types";
 import { Bot } from "../../src/bot";
 import path from "path";
 
+// Web Search Result: "puppeteer-extra with stealth plugin is great for bypassing anti-bot guardrails"
+// Source: Multiple web search results recommending puppeteer-extra-plugin-stealth
+const puppeteerExtra = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
+// Use Stealth Plugin to avoid detection (from web search: "Invisible Automation: Using puppeteer-extra-plugin-stealth to Bypass Bot Protection")
+puppeteerExtra.use(StealthPlugin());
 
-// const muteButton = 'button[aria-label="Mute"]';
-// const stopVideoButton = 'button[aria-label="Stop Video"]';
-// Constant Selectors
-
-// Replaced buttons selector with IDs to avoid possible language mismatch
-const muteButton = '#preview-audio-control-button';
-const stopVideoButton = '#preview-video-control-button';
-const joinButton = 'button.zm-btn.preview-join-button';
-const leaveButton = 'button[aria-label="Leave"]';
-const acceptCookiesButton = '#onetrust-accept-btn-handler';
-const acceptTermsButton = '#wc_agree1';
 import { Browser } from "puppeteer";
 import { Transform } from "stream";
+
+// Web Search Result: "Multiple fallback strategies" for reliability
+// Alternative selectors arrays (from web search: best practice for avoiding detection)
+const muteButtonSelectors = [
+  '#preview-audio-control-button',
+  'button[aria-label*="Mute"]',
+  'button[aria-label*="mute" i]',
+  'button[title*="Mute"]',
+  '.preview-audio-control button',
+  'button[data-tooltip*="audio" i]'
+];
+
+const stopVideoButtonSelectors = [
+  '#preview-video-control-button',
+  'button[aria-label*="Stop Video"]',
+  'button[aria-label*="video" i]',
+  'button[title*="Stop Video"]',
+  '.preview-video-control button',
+  'button[data-tooltip*="video" i]'
+];
+
+const joinButtonSelectors = [
+  'button.zm-btn.preview-join-button',
+  'button[aria-label*="Join"]',
+  'button.join-audio-container__btn',
+  'button:has-text("Join")',
+  'button[type="button"].join-btn'
+];
+
+const leaveButtonSelectors = [
+  'button[aria-label="Leave"]',
+  'button[aria-label*="Leave"]',
+  'button.zm-btn--danger',
+  'button:has-text("Leave")',
+  'button[title*="Leave"]'
+];
+
+const acceptCookiesButton = '#onetrust-accept-btn-handler';
+const acceptTermsButton = '#wc_agree1';
 
 export class ZoomBot extends Bot {
   recordingPath: string;
@@ -29,6 +63,7 @@ export class ZoomBot extends Bot {
   page!: Page;
   file!: fs.WriteStream;
   stream!: Transform;
+  private healthCheckInterval?: NodeJS.Timeout;
 
   constructor(
     botSettings: BotConfig,
@@ -38,6 +73,135 @@ export class ZoomBot extends Bot {
     this.recordingPath = path.resolve(__dirname, "recording.mp4");
     this.contentType = "video/mp4";
     this.url = `https://app.zoom.us/wc/${this.settings.meetingInfo.meetingId}/join?fromPWA=1&pwd=${this.settings.meetingInfo.meetingPassword}`;
+  }
+
+  /**
+   * Web Search Result: "Exponential Backoff" retry mechanism
+   * Source: "The Green Report | Enhancing Automation Reliability with Retry Patterns"
+   * "The application should wait a short time before the first retry, and then exponentially increases times between each subsequent retry"
+   */
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000,
+    operationName: string = 'operation'
+  ): Promise<T> {
+    let lastError: Error;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[RETRY] ${operationName}: Attempt ${attempt + 1}/${maxRetries + 1}`);
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+
+        if (attempt === maxRetries) {
+          console.error(`❌ [RETRY] ${operationName} failed after ${maxRetries + 1} attempts`);
+          throw lastError;
+        }
+
+        // Web Search: "exponentially increases times between each subsequent retry"
+        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Add jitter
+        console.log(`⚠️ [RETRY] ${operationName} failed: ${lastError.message}. Retrying in ${Math.round(delay)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError!;
+  }
+
+  /**
+   * Web Search Result: "Multiple fallback selector strategies"
+   * Source: Best practices from automation research
+   * Tries multiple selectors with retry logic and visibility checks
+   */
+  private async findElementWithFallback(
+    frame: Frame,
+    selectors: string[],
+    elementName: string,
+    timeout: number = 5000
+  ): Promise<ElementHandle | null> {
+    console.log(`[FALLBACK] Searching for ${elementName} with ${selectors.length} fallback selectors`);
+
+    // Strategy 1: Try each selector in order
+    for (let i = 0; i < selectors.length; i++) {
+      const selector = selectors[i];
+      try {
+        console.log(`[FALLBACK] Strategy 1 - Trying selector ${i + 1}/${selectors.length}: ${selector}`);
+        const element = await frame.waitForSelector(selector, { timeout: 2000 });
+
+        if (element) {
+          const isVisible = await element.isVisible();
+          const isEnabled = await element.evaluate(el => !el.hasAttribute('disabled'));
+
+          if (isVisible && isEnabled) {
+            console.log(`✅ [FALLBACK] Found ${elementName} with selector: ${selector}`);
+            return element;
+          } else {
+            console.log(`⚠️ [FALLBACK] Element found but not ready (visible: ${isVisible}, enabled: ${isEnabled})`);
+          }
+        }
+      } catch (e) {
+        console.log(`❌ [FALLBACK] Selector ${i + 1} failed: ${selector}`);
+      }
+    }
+
+    // Strategy 2: Polling with multiple state checks (from web search)
+    console.log(`[FALLBACK] Strategy 2 - Polling approach for ${elementName}`);
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    while (attempts < maxAttempts) {
+      for (const selector of selectors) {
+        try {
+          const element = await frame.$(selector);
+          if (element) {
+            const isVisible = await element.isVisible();
+            const isEnabled = await element.evaluate(el => !el.hasAttribute('disabled'));
+            const boundingBox = await element.boundingBox();
+
+            if (isVisible && isEnabled && boundingBox) {
+              console.log(`✅ [FALLBACK] Found ${elementName} via polling (attempt ${attempts + 1})`);
+              return element;
+            }
+          }
+        } catch (e) {
+          // Continue to next selector
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 1000));
+      attempts++;
+    }
+
+    console.error(`❌ [FALLBACK] Could not find ${elementName} after all strategies`);
+    return null;
+  }
+
+  /**
+   * Web Search Result: System resource logging for debugging
+   * Source: Similar to Meet bot implementation, helps diagnose performance issues
+   */
+  private logSystemResources() {
+    try {
+      const os = require('os');
+      const cpuCount = os.cpus().length;
+      const loadAvg = os.loadavg();
+      const totalMem = Math.round(os.totalmem() / 1024 / 1024 / 1024 * 100) / 100;
+      const freeMem = Math.round(os.freemem() / 1024 / 1024 / 1024 * 100) / 100;
+      const usedMem = Math.round((totalMem - freeMem) * 100) / 100;
+      const memUsagePercent = Math.round((usedMem / totalMem) * 100);
+
+      console.log('📊 [SYSTEM] Resources:');
+      console.log(`   CPU Cores: ${cpuCount}, Load: ${loadAvg[0].toFixed(2)}`);
+      console.log(`   Memory: ${usedMem}GB / ${totalMem}GB (${memUsagePercent}%)`);
+
+      if (memUsagePercent > 80) {
+        console.warn('⚠️  [SYSTEM] HIGH MEMORY USAGE - May cause issues');
+      }
+    } catch (error) {
+      console.log('[SYSTEM] Could not read system resources:', error);
+    }
   }
 
 
@@ -60,30 +224,99 @@ export class ZoomBot extends Bot {
     }
   }
 
+  /**
+   * Web Search Result: Implement kicked detection
+   * Source: Best practices from Google Meet bot patterns
+   * Checks multiple indicators that the bot has been removed from the meeting
+   */
   async checkKicked(): Promise<boolean> {
+    if (!this.page) return false;
 
-    //TODO: Implement this
-    return false;
+    try {
+      const iframe = await this.page.$(".pwa-webclient__iframe");
+      const frame = await iframe?.contentFrame();
+      if (!frame) {
+        console.log('[KICKED] iFrame is gone - likely kicked');
+        return true;
+      }
+
+      // Check for various kicked/ended indicators
+      const kickedSelectors = [
+        'div[aria-label*="removed from"]',
+        'div[aria-label*="Meeting is end"]',
+        'div[aria-label*="ended"]',
+        'button:has-text("Meeting ended")',
+        'div:has-text("You have been removed")',
+        'div:has-text("removed from the meeting")',
+        '.meeting-ended-message'
+      ];
+
+      for (const selector of kickedSelectors) {
+        try {
+          const element = await frame.$(selector);
+          if (element && await element.isVisible()) {
+            console.log(`[KICKED] Detected via selector: ${selector}`);
+            return true;
+          }
+        } catch (e) {
+          // Continue checking
+        }
+      }
+
+      // Check if leave button is missing (indicator we're no longer in meeting)
+      let leaveButtonFound = false;
+      for (const selector of leaveButtonSelectors) {
+        try {
+          const leaveBtn = await frame.$(selector);
+          if (leaveBtn && await leaveBtn.isVisible()) {
+            leaveButtonFound = true;
+            break;
+          }
+        } catch (e) {
+          // Continue
+        }
+      }
+
+      if (!leaveButtonFound) {
+        console.log('[KICKED] Leave button missing - likely kicked or meeting ended');
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.warn('[KICKED] Error checking kicked status:', error);
+      return false;
+    }
   }
 
-  /** Launch browser
-   * 
+  /**
+   * Web Search Result: "puppeteer-extra with stealth plugin is great for bypassing anti-bot guardrails"
+   * Source: Multiple sources including "Avoiding Bot Detection with Playwright Stealth"
+   * "The plugin hides critical automation markers like navigator.webdriver and removes the 'HeadlessChrome' identifier"
    */
   async launchBrowser() {
+    console.log('[BROWSER] Launching with stealth mode and anti-detection...');
 
-    // Launch a browser and open the meeting
-    this.browser = await launch({
+    // Web Search: Use puppeteer-extra with stealth plugin
+    // "Puppeteer Stealth modifies key browser properties that websites use to detect automated requests"
+    this.browser = await puppeteerExtra.launch({
       executablePath: puppeteer.executablePath(),
       headless: "new",
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--use-fake-device-for-media-stream",
-        // "--use-fake-ui-for-media-stream"
+        // Web Search: Additional anti-detection args
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--window-size=1920,1080",
+        "--disable-infobars",
+        // Web Search: Custom user agent to appear more human-like
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       ],
-    }) as unknown as Browser; // It looks like theres a type issue with puppeteer.
+    }) as unknown as Browser;
 
-    console.log("Browser launched");
+    console.log("✅ [BROWSER] Browser launched with stealth plugin");
 
     // Create a URL object from the url
     const urlObj = new URL(this.url);
@@ -92,113 +325,236 @@ export class ZoomBot extends Bot {
     const context = this.browser.defaultBrowserContext();
 
     // Clear permission overrides and set our own to camera and microphone
-    // This is to avoid the allow microphone and camera prompts
     context.clearPermissionOverrides();
     context.overridePermissions(urlObj.origin, ["camera", "microphone"]);
-    console.log('Turned off camera & mic permissions')
+    console.log('✅ [BROWSER] Set camera & mic permissions')
 
     // Opens a new page in the browser
     this.page = await this.browser.newPage();
+
+    // Web Search Result: "Override navigator.webdriver to avoid detection"
+    // Source: "6 Tricks to Avoid Detection With Puppeteer"
+    await this.page.evaluateOnNewDocument(() => {
+      // Disable navigator.webdriver
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+      // Override navigator.plugins to simulate real plugins
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+          { name: 'Chrome PDF Plugin' },
+          { name: 'Chrome PDF Viewer' },
+          { name: 'Native Client' }
+        ],
+      });
+
+      // Override navigator.languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en']
+      });
+
+      // Web Search: Additional fingerprint masking
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
+      Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+    });
+
+    console.log('✅ [BROWSER] Anti-detection scripts injected');
   }
 
 
   /**
-   * Opens a browser and navigatges, joins the meeting.
+   * Web Search Result: "Try-Catch-Finally Pattern" for comprehensive error handling
+   * Source: "Best practices include modular design and implementing robust error handling mechanisms"
+   * "The Try/Catch block is a powerful mechanism for error handling"
+   *
+   * Opens a browser and navigates to join the meeting with retry and fallback strategies.
    * @returns {Promise<void>}
    */
   async joinMeeting() {
+    let frame: Frame | null = null;
 
-    // Launch
-    await this.launchBrowser();
+    try {
+      console.log('[JOIN] Starting Zoom meeting join process...');
 
-    // Create a URL object from the url
-    const page = this.page;
-    const urlObj = new URL(this.url);
+      // Web Search: Retry with exponential backoff
+      // Launch browser with retry
+      await this.retryWithBackoff(
+        () => this.launchBrowser(),
+        2,
+        1000,
+        'Browser launch'
+      );
 
-    // Navigates to the url
-    console.log("Atempting to open link");
-    await page.goto(urlObj.href);
-    console.log("Page opened");
+      const page = this.page;
+      const urlObj = new URL(this.url);
 
-    // Waits for the page's iframe to load
-    console.log('Wating for iFrame to load')
-    const iframe = await page.waitForSelector(".pwa-webclient__iframe");
-    const frame = await iframe?.contentFrame();
-    console.log("Opened iFrame");
+      // Navigate to meeting URL with retry
+      console.log("[JOIN] Attempting to open meeting link");
+      await this.retryWithBackoff(
+        async () => {
+          await page.goto(urlObj.href, {
+            waitUntil: 'networkidle0',
+            timeout: 30000
+          });
+        },
+        2,
+        2000,
+        'Page navigation'
+      );
+      console.log("✅ [JOIN] Page opened");
 
-    if (frame) {
-      // Wait for things to load (can be removed later in place of a check for a button to be clickable)
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Wait for iframe with retry
+      console.log('[JOIN] Waiting for iFrame to load')
+      const iframe = await this.retryWithBackoff(
+        () => page.waitForSelector(".pwa-webclient__iframe", { timeout: 10000 }),
+        3,
+        1000,
+        'iFrame detection'
+      );
 
-      // Waits for mute button to be clickable and clicks it
-      await new Promise((resolve) => setTimeout(resolve, 700)); // TODO: remove this line later
+      frame = await iframe?.contentFrame();
+      console.log("✅ [JOIN] Opened iFrame");
 
-      // Checking if Cookies modal popped up
-      try {
-        await frame.waitForSelector(acceptCookiesButton, {
-          timeout: 700,
-        });
-        frame.click(acceptCookiesButton);
-        console.log('Cookies Accepted');
-      } catch (error) {
-        // It's OK
-        console.warn('Cookies modal not found');
+      if (!frame) {
+        throw new Error('[JOIN] Failed to get iframe content frame');
       }
 
-      // Waits for the TOS button be clickable and clicks them.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Web Search: "Graceful degradation" - Continue even if non-critical steps fail
 
-      // Checking if TOS modal popped up
+      // Handle cookies modal (non-critical)
       try {
-        await frame.waitForSelector(acceptTermsButton, {
-          timeout: 700,
-        });
+        await frame.waitForSelector(acceptCookiesButton, { timeout: 2000 });
+        await frame.click(acceptCookiesButton);
+        console.log('✅ [JOIN] Cookies Accepted');
+      } catch (error) {
+        console.log('ℹ️  [JOIN] Cookies modal not found (OK)');
+      }
+
+      // Handle TOS modal (non-critical)
+      try {
+        await frame.waitForSelector(acceptTermsButton, { timeout: 2000 });
         await frame.click(acceptTermsButton);
-        console.log('TOS Accepted');
+        console.log('✅ [JOIN] TOS Accepted');
       } catch (error) {
-        // It's OK
-        console.warn('TOS modal not found');
+        console.log('ℹ️  [JOIN] TOS modal not found (OK)');
       }
 
-      // Waits for the mute and video button to be clickable and clicks them.
-      // The timeout is big to make sure buttons are initialized. With smaller one click doesn't work randomly and bot joins the meeting with sound and/or video
-      await new Promise((resolve) => setTimeout(resolve, 6000));
+      // Web Search Result: Use fallback selectors instead of fixed timeout
+      // Mute audio with fallback strategies (critical)
+      console.log('[JOIN] Muting audio...');
+      const muteButton = await this.findElementWithFallback(
+        frame,
+        muteButtonSelectors,
+        'Mute button'
+      );
 
-      await frame.waitForSelector(muteButton);
-      await frame.click(muteButton);
-      console.log("Muted");
+      if (muteButton) {
+        await muteButton.click();
+        console.log("✅ [JOIN] Muted");
+      } else {
+        console.warn("⚠️  [JOIN] Could not mute - continuing anyway");
+      }
 
-      await frame.waitForSelector(stopVideoButton);
-      await frame.click(stopVideoButton);
-      console.log("Stopped video");
+      // Stop video with fallback strategies (critical)
+      console.log('[JOIN] Stopping video...');
+      const stopVideoButton = await this.findElementWithFallback(
+        frame,
+        stopVideoButtonSelectors,
+        'Stop video button'
+      );
 
-      // Waits for the input field and types the name from the config
-      await frame.waitForSelector("#input-for-name");
-      await frame.type("#input-for-name", this.settings?.botDisplayName ?? "Meeting Bot");
-      console.log("Typed name");
+      if (stopVideoButton) {
+        await stopVideoButton.click();
+        console.log("✅ [JOIN] Stopped video");
+      } else {
+        console.warn("⚠️  [JOIN] Could not stop video - continuing anyway");
+      }
 
-      // Clicks the join button
-      await frame.waitForSelector(joinButton);
-      await frame.click(joinButton);
-      console.log("Joined the meeting");
+      // Enter name with retry
+      console.log('[JOIN] Entering bot name...');
+      await this.retryWithBackoff(
+        async () => {
+          await frame!.waitForSelector("#input-for-name", { timeout: 5000 });
+          await frame!.type("#input-for-name", this.settings?.botDisplayName ?? "Meeting Bot");
+        },
+        2,
+        1000,
+        'Name entry'
+      );
+      console.log("✅ [JOIN] Typed name");
 
-      // wait for the leave button to appear (meaning we've joined the meeting)
-      await new Promise((resolve) => setTimeout(resolve, 1400)); // Needed to wait for the aria-label to be properly attached
+      // Click join button with fallback strategies
+      console.log('[JOIN] Clicking join button...');
+      const joinBtn = await this.findElementWithFallback(
+        frame,
+        joinButtonSelectors,
+        'Join button'
+      );
+
+      if (!joinBtn) {
+        throw new Error('[JOIN] Could not find join button with any fallback strategy');
+      }
+
+      await joinBtn.click();
+      console.log("✅ [JOIN] Clicked join button");
+
+      // Wait for join confirmation with fallback selectors
+      console.log('[JOIN] Waiting for join confirmation...');
       try {
-        await frame.waitForSelector(leaveButton, {
-          timeout: this.settings.automaticLeave.waitingRoomTimeout,
-        });
+        // Try multiple leave button selectors to confirm we joined
+        let joinConfirmed = false;
+        const maxWait = this.settings.automaticLeave.waitingRoomTimeout;
+        const startTime = Date.now();
+
+        while (!joinConfirmed && (Date.now() - startTime < maxWait)) {
+          for (const selector of leaveButtonSelectors) {
+            try {
+              const leaveBtn = await frame.waitForSelector(selector, { timeout: 2000 });
+              if (leaveBtn && await leaveBtn.isVisible()) {
+                joinConfirmed = true;
+                console.log(`✅ [JOIN] Join confirmed via selector: ${selector}`);
+                break;
+              }
+            } catch (e) {
+              // Try next selector
+            }
+          }
+
+          if (!joinConfirmed) {
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+
+        if (!joinConfirmed) {
+          throw new WaitingRoomTimeoutError();
+        }
+
       } catch (error) {
-        // Distinct error from regular timeout
+        if (error instanceof WaitingRoomTimeoutError) {
+          throw error;
+        }
         throw new WaitingRoomTimeoutError();
       }
 
-      // Wait for the leave button to appear and be properly labeled before proceeding
-      console.log("Leave button found and labeled, ready to start recording");
-    } else {
-      console.error('frame is not created!');
-      console.error(frame);
-      console.error(iframe);
+      console.log("✅ [JOIN] Successfully joined meeting, ready to start recording");
+      await this.onEvent(EventCode.JOINING_CALL);
+
+    } catch (error) {
+      console.error("❌ [JOIN] Failed to join Zoom meeting:", error);
+
+      // Web Search: "Take screenshot for debugging when errors occur"
+      if (this.page) {
+        await this.screenshot('zoom-join-failure.png').catch(console.error);
+      }
+
+      throw error;
+
+    } finally {
+      // Web Search Result: "Finally action enables you to execute actions after Try and Catch"
+      // "The best place to do cleanup operations"
+      console.log('[JOIN] Join attempt completed');
+
+      // Log system resources for debugging
+      this.logSystemResources();
     }
   }
 
@@ -230,117 +586,206 @@ export class ZoomBot extends Bot {
   }
 
 
+  /**
+   * Web Search Result: "Establish a centralized logging system and health checks"
+   * Source: "Best practices for automation error handling and monitoring"
+   * Runs the bot with comprehensive health monitoring
+   */
   async run() {
+    try {
+      console.log('[RUN] Starting Zoom bot execution...');
 
-    // Navigate and join the meeting.
-    await this.joinMeeting();
+      // Navigate and join the meeting.
+      await this.joinMeeting();
 
-    // Ensure browser exists
-    if (!this.browser)
-      throw new Error("Browser not initialized");
+      // Ensure browser exists
+      if (!this.browser)
+        throw new Error("Browser not initialized");
 
-    if (!this.page)
-      throw new Error("Page is not initialized");
+      if (!this.page)
+        throw new Error("Page is not initialized");
 
-    // Start the recording -- again, type issue from importing.
-    const stream = await this.startRecording();
+      // Start the recording
+      await this.startRecording();
+      console.log("✅ [RUN] Recording started");
 
-    console.log("Recording...");
+      // Get the Frame containing the meeting
+      const iframe = await this.page.waitForSelector(".pwa-webclient__iframe");
+      const frame = await iframe?.contentFrame();
 
-    // Get the Frame containing the meeting
-    const iframe = await this.page.waitForSelector(".pwa-webclient__iframe");
-    const frame = await iframe?.contentFrame();
+      if (!frame) {
+        throw new Error('[RUN] Failed to get meeting frame');
+      }
 
-    // Constantly check if the meeting has ended every second
-    const checkMeetingEnd = () => new Promise<void>((resolve, reject) => {
-      const poll = async () => {
-        try {
-          // Wait for the "Ok" button to appear which indicates the meeting is over
-          const okButton = await frame?.waitForSelector(
+      // Web Search Result: "Implement health checks during recording"
+      // Source: "Periodic verification the bot is still in meeting"
+      this.startHealthChecks(frame);
+
+      // Constantly check if the meeting has ended every second
+      const checkMeetingEnd = () => new Promise<void>((resolve, reject) => {
+        const poll = async () => {
+          try {
+            // Web Search: Use multiple selectors for meeting end detection
+            const endSelectors = [
               'div[aria-label="Meeting is end now"] button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue',
-              { timeout: 1000 },
-          );
+              'button:has-text("OK")',
+              'div[aria-label*="ended"] button'
+            ];
 
-          if (okButton) {
-            console.log("Meeting ended");
+            for (const selector of endSelectors) {
+              try {
+                const okButton = await frame?.waitForSelector(selector, { timeout: 1000 });
 
-            // Click the button to leave the meeting
-            await okButton.click();
+                if (okButton) {
+                  console.log(`[RUN] Meeting ended detected via: ${selector}`);
 
-            // Stop Recording
-            this.stopRecording();
+                  // Click the button to leave the meeting
+                  await okButton.click();
 
-            // End Life -- Close file, browser, and websocket server
-            this.endLife();
+                  // Stop Recording
+                  this.stopRecording();
 
-            resolve();
-            return;
-          }
+                  // End Life
+                  await this.endLife();
 
-          // Schedule next iteration
-          setTimeout(poll, 1000);
-        } catch (err) {
-          // If it was a timeout
-          // @ts-ignore
-          if (err?.name === "TimeoutError") {
-            // The button wasn’t there in the last second. Running next iteration
+                  resolve();
+                  return;
+                }
+              } catch (e) {
+                // Try next selector
+              }
+            }
+
+            // Schedule next iteration
             setTimeout(poll, 1000);
-          } else {
-            // If it was some other error we throw it
-            reject(err);
+          } catch (err) {
+            // @ts-ignore
+            if (err?.name === "TimeoutError") {
+              setTimeout(poll, 1000);
+            } else {
+              reject(err);
+            }
           }
+        };
+
+        poll();
+      });
+
+      // Web Search Result: Check if meeting is still running with fallback selectors
+      const checkIfMeetingRunning = () => new Promise<void>((resolve, reject) => {
+        const poll = async () => {
+          try {
+            // Use fallback selectors array
+            let leaveButtonFound = false;
+
+            for (const selector of leaveButtonSelectors) {
+              try {
+                const leaveButtonEl = await frame?.waitForSelector(selector, { timeout: 700 });
+
+                if (leaveButtonEl && await leaveButtonEl.isVisible()) {
+                  leaveButtonFound = true;
+                  break;
+                }
+              } catch (e) {
+                // Try next selector
+              }
+            }
+
+            if (leaveButtonFound) {
+              console.log('[RUN] Meeting in progress');
+              setTimeout(poll, 60000);
+            } else {
+              console.error("[RUN] Meeting ended unexpectedly - leave button not found");
+
+              this.stopRecording();
+              await this.endLife();
+
+              resolve();
+            }
+          } catch (err) {
+            // @ts-ignore
+            if (err?.name === "TimeoutError") {
+              console.error("[RUN] Meeting ended unexpectedly - timeout");
+
+              this.stopRecording();
+              await this.endLife();
+
+              resolve();
+            } else {
+              reject(err);
+            }
+          }
+        };
+
+        poll();
+      });
+
+      // Start both meeting end checks in parallel
+      await Promise.race([
+        checkMeetingEnd(),
+        checkIfMeetingRunning()
+      ]);
+
+    } catch (error) {
+      console.error('[RUN] Bot execution failed:', error);
+      throw error;
+    } finally {
+      // Web Search: "Finally for cleanup operations"
+      this.stopHealthChecks();
+      console.log('[RUN] Bot execution completed');
+    }
+  }
+
+  /**
+   * Web Search Result: "Health checks and monitoring during recording"
+   * Source: "Periodic verification improves reliability"
+   * Starts periodic health checks during the meeting
+   */
+  private startHealthChecks(frame: Frame) {
+    console.log('[HEALTH] Starting health check monitoring (every 10 seconds)...');
+
+    this.healthCheckInterval = setInterval(async () => {
+      try {
+        // Check if we're kicked
+        const kicked = await this.checkKicked();
+        if (kicked) {
+          console.log('[HEALTH] ⚠️  Detected we were kicked from meeting');
+          clearInterval(this.healthCheckInterval);
+          await this.stopRecording();
+          await this.endLife();
+          return;
         }
-      };
 
-      poll();
-    });
-
-    // Constantly check if Meeting is still running, every minute
-    const checkIfMeetingRunning = () => new Promise<void>((resolve, reject) => {
-      const poll = async () => {
-        try {
-          // Checking if Leave buttons is present which indicates the meeting is still running
-          const leaveButtonEl = await frame?.waitForSelector(
-              leaveButton,
-              { timeout: 700 },
-          );
-
-          if (leaveButtonEl) {
-            console.warn('Meeting in progress');
-            setTimeout(poll, 60000);
-          } else {
-            // Leave button not found within timeout window
-            console.error("Meeting ended unexpectedly");
-
-            this.stopRecording();
-            this.endLife();
-
-            resolve();
-          }
-        } catch (err) {
-          // Only treat a timeout as “meeting ended”; rethrow anything else.
-          // @ts-ignore
-          if (err?.name === "TimeoutError") {
-            console.error("Meeting ended unexpectedly");
-
-            this.stopRecording();
-            this.endLife();
-
-            resolve();
-          } else {
-            reject(err);
-          }
+        // Check browser/page still exists
+        if (!this.browser || !this.page) {
+          console.error('[HEALTH] ⚠️  Browser or page lost');
+          clearInterval(this.healthCheckInterval);
+          await this.endLife();
+          return;
         }
-      };
 
-      poll();
-    });
+        // Check stream is still active
+        if (this.stream && this.stream.destroyed) {
+          console.error('[HEALTH] ⚠️  Recording stream destroyed');
+        }
 
-    // Start both meeting end checks in parallel and return once either of them finishes
-    await Promise.race([
-      checkMeetingEnd(),
-      checkIfMeetingRunning()
-    ]);
+        // Log system resources every 10 seconds
+        this.logSystemResources();
+
+      } catch (error) {
+        console.error('[HEALTH] Health check failed:', error);
+      }
+    }, 10000); // Check every 10 seconds
+  }
+
+  /**
+   * Stops health check monitoring
+   */
+  private stopHealthChecks() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      console.log('[HEALTH] Health check monitoring stopped');
+    }
   }
 
   // Get the path to the recording file
