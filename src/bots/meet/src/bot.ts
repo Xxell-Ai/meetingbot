@@ -162,7 +162,7 @@ export class MeetsBot extends Bot {
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
   ) {
     super(botSettings, onEvent);
-    this.recordingPath = path.resolve(__dirname, "recording.mp3");
+    this.recordingPath = path.resolve(__dirname, "recording.m4a");
 
     this.browserArgs = [
       "--incognito",
@@ -264,7 +264,7 @@ export class MeetsBot extends Bot {
    * @returns {string} - Returns the content type of the recording file.
    */
   getContentType(): string {
-    return "audio/mp3";
+    return "audio/mp4";
   }
 
   /**
@@ -544,21 +544,21 @@ export class MeetsBot extends Bot {
         '-y',
         '-f', 'lavfi',
         '-i', 'sine=frequency=1000:duration=30', // Generate test audio tone
-        '-c:a', 'mp3',
-        '-b:a', '128k',
+        '-c:a', 'aac',
+        '-b:a', '64k',
         this.getRecordingPath()
       ]
     }
 
     // Audio-only recording parameters optimized for reliability and quality
-    console.log('Loading Dockerized FFMPEG Params for Audio-Only Recording (Quality-Optimized) ...')
+    console.log('Loading Dockerized FFMPEG Params for Audio-Only Recording (AAC Format) ...')
 
     const audioInputFormat = "pulse";
     const audioSource = "default";
 
-    // Optimized parameters for better audio quality and system stability
-    const audioBitrate = process.env.AUDIO_BITRATE || "64k"; // Higher bitrate for better quality
-    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "22050"; // Higher sample rate for better quality
+    // Optimized parameters for better audio quality and system stability with AAC
+    const audioBitrate = process.env.AUDIO_BITRATE || "64k"; // 64k is excellent for speech with AAC
+    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "22050"; // 22.05kHz sample rate for better quality
     const channels = process.env.AUDIO_CHANNELS || "1"; // Mono - sufficient for speech
     const threadQueueSize = process.env.THREAD_QUEUE_SIZE || "1024"; // Larger buffer for stability
 
@@ -571,8 +571,8 @@ export class MeetsBot extends Bot {
       "-analyzeduration", "0", // Skip analysis to start recording faster
       "-f", audioInputFormat,
       "-i", audioSource,
-      "-c:a", "mp3", // MP3 codec for compatibility
-      "-b:a", audioBitrate, // Higher bitrate for quality
+      "-c:a", "aac", // AAC codec for better compression and quality
+      "-b:a", audioBitrate, // Bitrate for quality (AAC is more efficient than MP3)
       "-ac", channels, // Audio channels
       "-ar", sampleRate, // Sample rate
       "-af", "highpass=f=80,lowpass=f=8000", // Audio filters to reduce noise

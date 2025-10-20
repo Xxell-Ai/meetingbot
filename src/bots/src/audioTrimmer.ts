@@ -44,12 +44,15 @@ export async function trimSilentEnd(inputPath: string, silentDurationMs: number)
     const dirname = path.dirname(inputPath);
     const outputPath = path.join(dirname, `${basename}_trimmed${ext}`);
 
-    // Use ffmpeg to trim the file
+    // Use ffmpeg to trim the file and convert to AAC for smaller file size
     const ffmpegCommand = [
       'ffmpeg',
       '-i', `"${inputPath}"`,
       '-t', newDurationSeconds.toString(),
-      '-c', 'copy', // Copy streams without re-encoding for speed
+      '-c:a', 'aac', // Convert to AAC for better compression
+      '-b:a', '64k', // 64kbps is good for voice recordings
+      '-ar', '22050', // 22.05kHz sample rate (sufficient for speech)
+      '-ac', '1', // Mono audio (sufficient for meetings)
       '-avoid_negative_ts', 'make_zero',
       '-y', // Overwrite output file if it exists
       `"${outputPath}"`
