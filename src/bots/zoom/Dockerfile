@@ -12,6 +12,9 @@ ENV \
 # Stay as root for all installation steps
 USER root
 
+# Install system dependencies (ffmpeg for audio processing)
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # Install pnpm
 RUN npm install -g pnpm
 
