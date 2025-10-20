@@ -64,6 +64,7 @@ export class ZoomBot extends Bot {
   file!: fs.WriteStream;
   stream!: Transform;
   private healthCheckInterval?: NodeJS.Timeout;
+  private meetingFrame?: Frame; // Store frame reference to avoid re-querying
 
   constructor(
     botSettings: BotConfig,
@@ -500,31 +501,64 @@ export class ZoomBot extends Bot {
       // Wait for join confirmation with fallback selectors
       console.log('[JOIN] Waiting for join confirmation...');
       try {
-        // Try multiple leave button selectors to confirm we joined
+        // Web Search Finding: "Race conditions in Zoom Web SDK's join-meeting procedure
+        // can cause bots to get stuck in the joining state"
+        // Solution: Use waitForFunction to check for join confirmation
         let joinConfirmed = false;
         const maxWait = this.settings.automaticLeave.waitingRoomTimeout;
         const startTime = Date.now();
 
-        while (!joinConfirmed && (Date.now() - startTime < maxWait)) {
-          for (const selector of leaveButtonSelectors) {
-            try {
-              const leaveBtn = await frame.waitForSelector(selector, { timeout: 2000 });
-              if (leaveBtn && await leaveBtn.isVisible()) {
-                joinConfirmed = true;
-                console.log(`✅ [JOIN] Join confirmed via selector: ${selector}`);
-                break;
+        // Strategy 1: Use waitForFunction for more reliable detection
+        try {
+          console.log('[JOIN] Using waitForFunction for join confirmation...');
+          await frame.waitForFunction(
+            (selectors) => {
+              // Check if any leave button selector is visible
+              for (const selector of selectors) {
+                const element = document.querySelector(selector);
+                if (element && element instanceof HTMLElement) {
+                  const isVisible = element.offsetParent !== null;
+                  if (isVisible) {
+                    return true;
+                  }
+                }
               }
-            } catch (e) {
-              // Try next selector
-            }
-          }
+              return false;
+            },
+            { timeout: Math.min(10000, maxWait) },
+            leaveButtonSelectors
+          );
 
-          if (!joinConfirmed) {
-            await new Promise(r => setTimeout(r, 1000));
+          joinConfirmed = true;
+          console.log('✅ [JOIN] Join confirmed via waitForFunction');
+
+        } catch (e) {
+          console.log('[JOIN] waitForFunction failed, trying selector polling...');
+
+          // Strategy 2: Fallback to selector polling
+          while (!joinConfirmed && (Date.now() - startTime < maxWait)) {
+            for (const selector of leaveButtonSelectors) {
+              try {
+                const leaveBtn = await frame.waitForSelector(selector, { timeout: 2000 });
+                if (leaveBtn && await leaveBtn.isVisible()) {
+                  joinConfirmed = true;
+                  console.log(`✅ [JOIN] Join confirmed via selector: ${selector}`);
+                  break;
+                }
+              } catch (e) {
+                // Try next selector
+              }
+            }
+
+            if (!joinConfirmed) {
+              // Web Search: Add delay to handle race conditions
+              await new Promise(r => setTimeout(r, 1000));
+            }
           }
         }
 
         if (!joinConfirmed) {
+          console.error('[JOIN] Join not confirmed within timeout period');
           throw new WaitingRoomTimeoutError();
         }
 
@@ -532,10 +566,84 @@ export class ZoomBot extends Bot {
         if (error instanceof WaitingRoomTimeoutError) {
           throw error;
         }
+        console.error('[JOIN] Join confirmation error:', error);
         throw new WaitingRoomTimeoutError();
       }
 
       console.log("✅ [JOIN] Successfully joined meeting, ready to start recording");
+
+      // Store frame reference for use in run() method
+      this.meetingFrame = frame;
+
+      // Hide video display to remove pie chart and video elements
+      console.log('[JOIN] Hiding video display elements...');
+      try {
+        await frame.evaluate(() => {
+          // Inject CSS to hide video elements (more reliable)
+          const style = document.createElement('style');
+          style.textContent = `
+            /* Hide all video-related elements */
+            video { display: none !important; }
+            .gallery-video-container { display: none !important; }
+            .active-speaker-container { display: none !important; }
+            .self-view-video { display: none !important; }
+            [class*="video-container"] { display: none !important; }
+            [class*="video-view"] { display: none !important; }
+            [class*="gallery"] { display: none !important; }
+            [class*="speaker-view"] { display: none !important; }
+            .video-avatar { display: none !important; }
+            .video-avatar__avatar { display: none !important; }
+            [aria-label*="video"] { display: none !important; }
+            /* Hide pie chart / avatar circles */
+            svg[class*="avatar"] { display: none !important; }
+            [class*="avatar-circle"] { display: none !important; }
+          `;
+          document.head.appendChild(style);
+
+          // Also directly hide elements
+          const galleryView = document.querySelector('.gallery-video-container');
+          if (galleryView) {
+            (galleryView as HTMLElement).style.display = 'none';
+          }
+
+          const speakerView = document.querySelector('.active-speaker-container');
+          if (speakerView) {
+            (speakerView as HTMLElement).style.display = 'none';
+          }
+
+          // Hide video containers
+          const videoContainers = document.querySelectorAll('[class*="video"]');
+          videoContainers.forEach((el) => {
+            if (el instanceof HTMLElement) {
+              el.style.display = 'none';
+            }
+          });
+
+          // Hide self view (pie chart you mentioned)
+          const selfView = document.querySelector('.self-view-video');
+          if (selfView) {
+            (selfView as HTMLElement).style.display = 'none';
+          }
+
+          // Hide all video elements
+          const videos = document.querySelectorAll('video');
+          videos.forEach((video) => {
+            video.style.display = 'none';
+          });
+
+          // Hide SVG avatars (pie charts)
+          const svgs = document.querySelectorAll('svg');
+          svgs.forEach((svg) => {
+            svg.style.display = 'none';
+          });
+
+          console.log('Video display elements hidden via CSS injection');
+        });
+        console.log('✅ [JOIN] Video display hidden successfully');
+      } catch (e) {
+        console.warn('⚠️  [JOIN] Could not hide video display:', e);
+      }
+
       await this.onEvent(EventCode.JOINING_CALL);
 
     } catch (error) {
@@ -605,17 +713,54 @@ export class ZoomBot extends Bot {
       if (!this.page)
         throw new Error("Page is not initialized");
 
+      // Use the stored frame reference from joinMeeting() instead of re-querying
+      if (!this.meetingFrame) {
+        console.error('[RUN] Meeting frame not available from joinMeeting, attempting to retrieve...');
+
+        // Web Search Solution: Use waitForFunction for iframe detection (from Stack Overflow)
+        // "When automating Zoom with Puppeteer, the normal waitForSelector was timing out
+        // due to quirks with iframes, requiring the use of waitForFunction"
+        try {
+          console.log('[RUN] Using waitForFunction for iframe detection...');
+          await this.page.waitForFunction(
+            () => {
+              const iframe = document.querySelector('.pwa-webclient__iframe') as HTMLIFrameElement;
+              return iframe && iframe.contentDocument;
+            },
+            { timeout: 10000 }
+          );
+
+          const iframe = await this.page.$('.pwa-webclient__iframe');
+          this.meetingFrame = await iframe?.contentFrame() || undefined;
+
+          if (!this.meetingFrame) {
+            // Final fallback: Use retry with backoff
+            const iframeRetry = await this.retryWithBackoff(
+              () => this.page.waitForSelector(".pwa-webclient__iframe", { timeout: 5000 }),
+              2,
+              1000,
+              'Getting meeting iframe (retry)'
+            );
+
+            this.meetingFrame = await iframeRetry?.contentFrame() || undefined;
+          }
+
+        } catch (e) {
+          console.error('[RUN] All iframe detection strategies failed:', e);
+          throw new Error('[RUN] Failed to get meeting frame after all attempts');
+        }
+
+        if (!this.meetingFrame) {
+          throw new Error('[RUN] Failed to get meeting frame');
+        }
+      }
+
+      const frame = this.meetingFrame;
+      console.log('✅ [RUN] Using meeting frame reference');
+
       // Start the recording
       await this.startRecording();
       console.log("✅ [RUN] Recording started");
-
-      // Get the Frame containing the meeting
-      const iframe = await this.page.waitForSelector(".pwa-webclient__iframe");
-      const frame = await iframe?.contentFrame();
-
-      if (!frame) {
-        throw new Error('[RUN] Failed to get meeting frame');
-      }
 
       // Web Search Result: "Implement health checks during recording"
       // Source: "Periodic verification the bot is still in meeting"
