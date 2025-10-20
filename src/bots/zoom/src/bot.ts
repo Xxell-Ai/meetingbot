@@ -668,18 +668,48 @@ export class ZoomBot extends Bot {
 
   /**
    * Start Recording the meeting.
+   * Web Search: Add retry logic and better error handling for stream creation
    */
   async startRecording() {
     // Check if the page is initialized
     if (!this.page) throw new Error("Page not initialized");
 
-    // Create the Stream
-    this.stream = await getStream(this.page as any, { audio: true, video: true });
+    console.log('[RECORDING] Starting recording stream...');
 
-    // Create and Write the recording to a file, pipe the stream to a fileWriteStream
-    this.file = fs.createWriteStream(this.recordingPath);
-    this.stream.pipe(this.file);
+    try {
+      // Web Search Finding: puppeteer-stream getStream can timeout in Zoom meetings
+      // Solution: Add retry with exponential backoff
+      this.stream = await this.retryWithBackoff(
+        async () => {
+          console.log('[RECORDING] Attempting to create stream...');
 
+          // Wait a bit for meeting to fully load before capturing stream
+          await new Promise(r => setTimeout(r, 2000));
+
+          const stream = await getStream(this.page as any, {
+            audio: true,
+            video: true,
+            mimeType: 'video/webm;codecs=vp8,opus' // Specify codec for better compatibility
+          });
+
+          console.log('[RECORDING] Stream created successfully');
+          return stream;
+        },
+        3, // 3 retries
+        2000, // 2 second base delay
+        'Stream creation'
+      );
+
+      // Create and Write the recording to a file, pipe the stream to a fileWriteStream
+      this.file = fs.createWriteStream(this.recordingPath);
+      this.stream.pipe(this.file);
+
+      console.log('✅ [RECORDING] Recording started successfully');
+
+    } catch (error) {
+      console.error('❌ [RECORDING] Failed to start recording:', error);
+      throw new Error(`Failed to start recording: ${error}`);
+    }
   }
 
   /**
@@ -758,7 +788,13 @@ export class ZoomBot extends Bot {
       const frame = this.meetingFrame;
       console.log('✅ [RUN] Using meeting frame reference');
 
+      // Web Search Finding: Wait for meeting to be fully loaded before starting recording
+      // Give Zoom time to establish media connections
+      console.log('[RUN] Waiting for meeting to fully load before recording...');
+      await new Promise(r => setTimeout(r, 3000)); // 3 second delay
+
       // Start the recording
+      console.log('[RUN] Starting recording...');
       await this.startRecording();
       console.log("✅ [RUN] Recording started");
 
