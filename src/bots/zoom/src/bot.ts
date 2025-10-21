@@ -71,8 +71,9 @@ export class ZoomBot extends Bot {
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
   ) {
     super(botSettings, onEvent);
-    this.recordingPath = path.resolve(__dirname, "recording.mp4");
-    this.contentType = "video/mp4";
+    // Changed to AAC audio-only format like Meet bot for smaller file sizes
+    this.recordingPath = path.resolve(__dirname, "recording.aac");
+    this.contentType = "audio/aac";
     this.url = `https://app.zoom.us/wc/${this.settings.meetingInfo.meetingId}/join?fromPWA=1&pwd=${this.settings.meetingInfo.meetingPassword}`;
   }
 
@@ -575,75 +576,6 @@ export class ZoomBot extends Bot {
       // Store frame reference for use in run() method
       this.meetingFrame = frame;
 
-      // Hide video display to remove pie chart and video elements
-      console.log('[JOIN] Hiding video display elements...');
-      try {
-        await frame.evaluate(() => {
-          // Inject CSS to hide video elements (more reliable)
-          const style = document.createElement('style');
-          style.textContent = `
-            /* Hide all video-related elements */
-            video { display: none !important; }
-            .gallery-video-container { display: none !important; }
-            .active-speaker-container { display: none !important; }
-            .self-view-video { display: none !important; }
-            [class*="video-container"] { display: none !important; }
-            [class*="video-view"] { display: none !important; }
-            [class*="gallery"] { display: none !important; }
-            [class*="speaker-view"] { display: none !important; }
-            .video-avatar { display: none !important; }
-            .video-avatar__avatar { display: none !important; }
-            [aria-label*="video"] { display: none !important; }
-            /* Hide pie chart / avatar circles */
-            svg[class*="avatar"] { display: none !important; }
-            [class*="avatar-circle"] { display: none !important; }
-          `;
-          document.head.appendChild(style);
-
-          // Also directly hide elements
-          const galleryView = document.querySelector('.gallery-video-container');
-          if (galleryView) {
-            (galleryView as HTMLElement).style.display = 'none';
-          }
-
-          const speakerView = document.querySelector('.active-speaker-container');
-          if (speakerView) {
-            (speakerView as HTMLElement).style.display = 'none';
-          }
-
-          // Hide video containers
-          const videoContainers = document.querySelectorAll('[class*="video"]');
-          videoContainers.forEach((el) => {
-            if (el instanceof HTMLElement) {
-              el.style.display = 'none';
-            }
-          });
-
-          // Hide self view (pie chart you mentioned)
-          const selfView = document.querySelector('.self-view-video');
-          if (selfView) {
-            (selfView as HTMLElement).style.display = 'none';
-          }
-
-          // Hide all video elements
-          const videos = document.querySelectorAll('video');
-          videos.forEach((video) => {
-            video.style.display = 'none';
-          });
-
-          // Hide SVG avatars (pie charts)
-          const svgs = document.querySelectorAll('svg');
-          svgs.forEach((svg) => {
-            svg.style.display = 'none';
-          });
-
-          console.log('Video display elements hidden via CSS injection');
-        });
-        console.log('✅ [JOIN] Video display hidden successfully');
-      } catch (e) {
-        console.warn('⚠️  [JOIN] Could not hide video display:', e);
-      }
-
       await this.onEvent(EventCode.JOINING_CALL);
 
     } catch (error) {
@@ -668,7 +600,8 @@ export class ZoomBot extends Bot {
 
   /**
    * Start Recording the meeting.
-   * Web Search: Add retry logic and better error handling for stream creation
+   * Web Search Finding: puppeteer-stream has timeout issues with startDelay parameter needed
+   * Source: GitHub issue #183 and npm documentation
    */
   async startRecording() {
     // Check if the page is initialized
@@ -677,28 +610,29 @@ export class ZoomBot extends Bot {
     console.log('[RECORDING] Starting recording stream...');
 
     try {
-      // Web Search Finding: puppeteer-stream getStream can timeout in Zoom meetings
-      // Solution: Add retry with exponential backoff
-      this.stream = await this.retryWithBackoff(
-        async () => {
-          console.log('[RECORDING] Attempting to create stream...');
+      // Web Search Finding: "puppeteer-stream has timeout issues that can be addressed by
+      // setting and increasing the startDelay parameter to fix the rarely occurring
+      // Error: net::ERR_BLOCKED_BY_CLIENT"
+      // Also need closeDelay to fix TargetCloseError
 
-          // Wait a bit for meeting to fully load before capturing stream
-          await new Promise(r => setTimeout(r, 2000));
+      console.log('[RECORDING] Attempting to create audio-only stream with startDelay and closeDelay...');
 
-          const stream = await getStream(this.page as any, {
-            audio: true,
-            video: true,
-            mimeType: 'video/webm;codecs=vp8,opus' // Specify codec for better compatibility
-          });
+      // Critical: Use startDelay and closeDelay parameters from web search
+      // Changed to audio-only to match Meet bot (smaller files, sufficient for transcription)
+      const stream = await getStream(this.page as any, {
+        audio: true,
+        video: false, // Audio-only like Meet bot
+        mimeType: 'audio/webm;codecs=opus', // Audio-only WebM with Opus codec
+        // Web Search: Set and increase startDelay to fix timeout (default is 250ms)
+        startDelay: 5000, // 5 seconds to allow Zoom to fully load media
+        // Web Search: Set closeDelay to fix TargetCloseError
+        closeDelay: 2000,
+        // Additional options for reliability
+        frameSize: 20 // Reduce frame size for better performance
+      });
 
-          console.log('[RECORDING] Stream created successfully');
-          return stream;
-        },
-        3, // 3 retries
-        2000, // 2 second base delay
-        'Stream creation'
-      );
+      this.stream = stream;
+      console.log('[RECORDING] Stream created successfully');
 
       // Create and Write the recording to a file, pipe the stream to a fileWriteStream
       this.file = fs.createWriteStream(this.recordingPath);
@@ -708,6 +642,7 @@ export class ZoomBot extends Bot {
 
     } catch (error) {
       console.error('❌ [RECORDING] Failed to start recording:', error);
+      console.error('[RECORDING] Error details:', JSON.stringify(error, null, 2));
       throw new Error(`Failed to start recording: ${error}`);
     }
   }
@@ -788,12 +723,8 @@ export class ZoomBot extends Bot {
       const frame = this.meetingFrame;
       console.log('✅ [RUN] Using meeting frame reference');
 
-      // Web Search Finding: Wait for meeting to be fully loaded before starting recording
-      // Give Zoom time to establish media connections
-      console.log('[RUN] Waiting for meeting to fully load before recording...');
-      await new Promise(r => setTimeout(r, 3000)); // 3 second delay
-
       // Start the recording
+      // Note: startDelay parameter in getStream handles the delay internally
       console.log('[RUN] Starting recording...');
       await this.startRecording();
       console.log("✅ [RUN] Recording started");

@@ -162,7 +162,7 @@ export class MeetsBot extends Bot {
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
   ) {
     super(botSettings, onEvent);
-    this.recordingPath = path.resolve(__dirname, "recording.m4a");
+    this.recordingPath = path.resolve(__dirname, "recording.aac");
 
     this.browserArgs = [
       "--incognito",
@@ -264,7 +264,7 @@ export class MeetsBot extends Bot {
    * @returns {string} - Returns the content type of the recording file.
    */
   getContentType(): string {
-    return "audio/mp4";
+    return "audio/aac";
   }
 
   /**
