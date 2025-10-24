@@ -5,14 +5,6 @@ import { BotConfig, EventCode, WaitingRoomTimeoutError, SpeakerTimeframe } from 
 import { Bot } from "../../src/bot";
 import path from "path";
 
-// Web Search Result: "puppeteer-extra with stealth plugin is great for bypassing anti-bot guardrails"
-// Source: Multiple web search results recommending puppeteer-extra-plugin-stealth
-const puppeteerExtra = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-
-// Use Stealth Plugin to avoid detection (from web search: "Invisible Automation: Using puppeteer-extra-plugin-stealth to Bypass Bot Protection")
-puppeteerExtra.use(StealthPlugin());
-
 import { Browser } from "puppeteer";
 import { Transform } from "stream";
 
@@ -292,33 +284,37 @@ export class ZoomBot extends Bot {
   }
 
   /**
-   * Web Search Result: "puppeteer-extra with stealth plugin is great for bypassing anti-bot guardrails"
-   * Source: Multiple sources including "Avoiding Bot Detection with Playwright Stealth"
-   * "The plugin hides critical automation markers like navigator.webdriver and removes the 'HeadlessChrome' identifier"
+   * Web Search Result: "puppeteer-stream requires using its own launch() function"
+   * Source: GitHub Issue #183 - getStream times out if not using puppeteer-stream's launch
+   * "The launch() method loads a browser extension required for capturing audio/video streams"
    */
   async launchBrowser() {
-    console.log('[BROWSER] Launching with stealth mode and anti-detection...');
+    console.log('[BROWSER] Launching with puppeteer-stream and anti-detection...');
 
-    // Web Search: Use puppeteer-extra with stealth plugin
-    // "Puppeteer Stealth modifies key browser properties that websites use to detect automated requests"
-    this.browser = await puppeteerExtra.launch({
+    // CRITICAL: Must use puppeteer-stream's launch() instead of puppeteer.launch()
+    // puppeteer-stream loads a browser extension required for getStream() to work
+    // Without this, getStream() will timeout after 30 seconds
+    this.browser = await launch({
       executablePath: puppeteer.executablePath(),
       headless: "new",
+      defaultViewport: {
+        width: 1920,
+        height: 1080,
+      },
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--use-fake-device-for-media-stream",
-        // Web Search: Additional anti-detection args
+        // Anti-detection args
         "--disable-blink-features=AutomationControlled",
         "--disable-features=IsolateOrigins,site-per-process",
-        "--window-size=1920,1080",
         "--disable-infobars",
-        // Web Search: Custom user agent to appear more human-like
+        // Custom user agent to appear more human-like
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       ],
     }) as unknown as Browser;
 
-    console.log("✅ [BROWSER] Browser launched with stealth plugin");
+    console.log("✅ [BROWSER] Browser launched with puppeteer-stream");
 
     // Create a URL object from the url
     const urlObj = new URL(this.url);
@@ -600,7 +596,7 @@ export class ZoomBot extends Bot {
 
   /**
    * Start Recording the meeting.
-   * Web Search Finding: puppeteer-stream has timeout issues with startDelay parameter needed
+   * Web Search Finding: Must use puppeteer-stream's launch() for getStream() to work
    * Source: GitHub issue #183 and npm documentation
    */
   async startRecording() {
@@ -610,24 +606,20 @@ export class ZoomBot extends Bot {
     console.log('[RECORDING] Starting recording stream...');
 
     try {
-      // Web Search Finding: "puppeteer-stream has timeout issues that can be addressed by
-      // setting and increasing the startDelay parameter to fix the rarely occurring
-      // Error: net::ERR_BLOCKED_BY_CLIENT"
-      // Also need closeDelay to fix TargetCloseError
+      // Web Search Finding: "puppeteer-stream requires using launch() from puppeteer-stream
+      // instead of puppeteer.launch() or puppeteer-extra.launch()"
+      // The launch() function loads a browser extension required for getStream() to work
+      // Without it, getStream() will timeout after 30 seconds
 
-      console.log('[RECORDING] Attempting to create audio-only stream with startDelay and closeDelay...');
+      console.log('[RECORDING] Creating audio-only stream...');
 
-      // Critical: Use startDelay and closeDelay parameters from web search
       // Changed to audio-only to match Meet bot (smaller files, sufficient for transcription)
       const stream = await getStream(this.page as any, {
         audio: true,
         video: false, // Audio-only like Meet bot
         mimeType: 'audio/webm;codecs=opus', // Audio-only WebM with Opus codec
-        // Web Search: Set and increase startDelay to fix timeout (default is 250ms)
-        startDelay: 5000, // 5 seconds to allow Zoom to fully load media
-        // Web Search: Set closeDelay to fix TargetCloseError
-        closeDelay: 2000,
-        // Additional options for reliability
+        // Optional: startDelay can help with rare ERR_BLOCKED_BY_CLIENT errors (default is 250ms)
+        // Optional: closeDelay can help with rare TargetCloseError issues
         frameSize: 20 // Reduce frame size for better performance
       });
 
