@@ -63,7 +63,8 @@ export class ZoomBot extends Bot {
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
   ) {
     super(botSettings, onEvent);
-    // Changed to AAC audio-only format like Meet bot for smaller file sizes
+    // puppeteer-stream outputs WebM, but we convert to AAC after recording
+    // Note: recording.webm is temporary, final output is recording.aac
     this.recordingPath = path.resolve(__dirname, "recording.aac");
     this.contentType = "audio/aac";
     this.url = `https://app.zoom.us/wc/${this.settings.meetingInfo.meetingId}/join?fromPWA=1&pwd=${this.settings.meetingInfo.meetingPassword}`;
@@ -626,11 +627,13 @@ export class ZoomBot extends Bot {
       this.stream = stream;
       console.log('[RECORDING] Stream created successfully');
 
-      // Create and Write the recording to a file, pipe the stream to a fileWriteStream
-      this.file = fs.createWriteStream(this.recordingPath);
+      // Create and Write the recording to a temporary WebM file first
+      // (will be converted to AAC after recording stops)
+      const tempWebmPath = path.resolve(__dirname, "recording.webm");
+      this.file = fs.createWriteStream(tempWebmPath);
       this.stream.pipe(this.file);
 
-      console.log('✅ [RECORDING] Recording started successfully');
+      console.log('✅ [RECORDING] Recording started successfully (saving to temp WebM file)');
 
     } catch (error) {
       console.error('❌ [RECORDING] Failed to start recording:', error);
@@ -643,11 +646,63 @@ export class ZoomBot extends Bot {
    * Stop Recording the meeting.
    */
   async stopRecording() {
-
     // End the recording and close the file
     if (this.stream)
       this.stream.destroy();
 
+    // Wait a bit for file to be fully written
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Convert WebM to AAC
+    await this.convertWebMToAAC();
+  }
+
+  /**
+   * Convert WebM recording to AAC format using FFmpeg
+   */
+  private async convertWebMToAAC() {
+    const tempWebmPath = path.resolve(__dirname, "recording.webm");
+    const outputAacPath = this.recordingPath; // recording.aac
+
+    try {
+      console.log('[CONVERT] Converting WebM to AAC...');
+      console.log(`[CONVERT] Input: ${tempWebmPath}`);
+      console.log(`[CONVERT] Output: ${outputAacPath}`);
+
+      // Check if WebM file exists
+      if (!fs.existsSync(tempWebmPath)) {
+        console.error('[CONVERT] WebM file not found, skipping conversion');
+        return;
+      }
+
+      const { execSync } = require('child_process');
+
+      // Convert WebM (Opus) to AAC using FFmpeg
+      // -i: input file
+      // -c:a aac: use AAC codec
+      // -b:a 64k: bitrate 64kbps (good for voice)
+      // -ar 22050: sample rate 22050 Hz (sufficient for voice)
+      // -ac 1: mono audio (voice recordings don't need stereo)
+      // -y: overwrite output file if exists
+      const command = `ffmpeg -i "${tempWebmPath}" -c:a aac -b:a 64k -ar 22050 -ac 1 -y "${outputAacPath}"`;
+
+      console.log(`[CONVERT] Running: ${command}`);
+      execSync(command, { stdio: 'pipe' });
+
+      console.log('✅ [CONVERT] Successfully converted WebM to AAC');
+
+      // Delete temporary WebM file
+      fs.unlinkSync(tempWebmPath);
+      console.log('[CONVERT] Cleaned up temporary WebM file');
+
+    } catch (error) {
+      console.error('❌ [CONVERT] Failed to convert WebM to AAC:', error);
+      // If conversion fails, try to at least have the WebM file available
+      if (fs.existsSync(tempWebmPath) && !fs.existsSync(outputAacPath)) {
+        console.log('[CONVERT] Renaming WebM to AAC as fallback');
+        fs.renameSync(tempWebmPath, outputAacPath);
+      }
+    }
   }
 
 
@@ -782,24 +837,28 @@ export class ZoomBot extends Bot {
             // Use fallback selectors array
             let leaveButtonFound = false;
 
+            console.log('[RUN] Checking if meeting is still active (checking leave button)...');
             for (const selector of leaveButtonSelectors) {
               try {
-                const leaveButtonEl = await frame?.waitForSelector(selector, { timeout: 700 });
+                // Increased from 700ms to 5000ms to avoid false positives when page is under load
+                const leaveButtonEl = await frame?.waitForSelector(selector, { timeout: 5000 });
 
                 if (leaveButtonEl && await leaveButtonEl.isVisible()) {
                   leaveButtonFound = true;
+                  console.log(`[RUN] ✓ Leave button found via selector: ${selector}`);
                   break;
                 }
               } catch (e) {
-                // Try next selector
+                // Try next selector - this is normal, don't log as error
+                console.log(`[RUN] Selector not found (trying next): ${selector}`);
               }
             }
 
             if (leaveButtonFound) {
-              console.log('[RUN] Meeting in progress');
+              console.log('[RUN] ✓ Meeting confirmed active, will check again in 60 seconds');
               setTimeout(poll, 60000);
             } else {
-              console.error("[RUN] Meeting ended unexpectedly - leave button not found");
+              console.error("[RUN] ✗ Meeting ended - leave button not found with any selector after checking all options");
 
               this.stopRecording();
               await this.endLife();
