@@ -57,6 +57,7 @@ export class ZoomBot extends Bot {
   stream!: Transform;
   private healthCheckInterval?: NodeJS.Timeout;
   private meetingFrame?: Frame; // Store frame reference to avoid re-querying
+  private recordingStopped: boolean = false; // Flag to prevent multiple stop/convert calls
 
   constructor(
     botSettings: BotConfig,
@@ -646,14 +647,25 @@ export class ZoomBot extends Bot {
    * Stop Recording the meeting.
    */
   async stopRecording() {
+    // Prevent multiple calls to stopRecording
+    if (this.recordingStopped) {
+      console.log('[RECORDING] Already stopped, skipping duplicate stop call');
+      return;
+    }
+    this.recordingStopped = true;
+
+    console.log('[RECORDING] Stopping recording...');
+
     // End the recording and close the file
-    if (this.stream)
+    if (this.stream) {
       this.stream.destroy();
+      console.log('[RECORDING] Stream destroyed');
+    }
 
     // Wait a bit for file to be fully written
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Convert WebM to AAC
+    // Convert WebM to AAC (only runs once due to flag above)
     await this.convertWebMToAAC();
   }
 
@@ -801,10 +813,7 @@ export class ZoomBot extends Bot {
                   // Click the button to leave the meeting
                   await okButton.click();
 
-                  // Stop Recording
-                  this.stopRecording();
-
-                  // End Life
+                  // Stop Recording and cleanup
                   await this.endLife();
 
                   resolve();
@@ -860,7 +869,7 @@ export class ZoomBot extends Bot {
             } else {
               console.error("[RUN] ✗ Meeting ended - leave button not found with any selector after checking all options");
 
-              this.stopRecording();
+              // Only call endLife (it will call stopRecording internally)
               await this.endLife();
 
               resolve();
@@ -870,7 +879,7 @@ export class ZoomBot extends Bot {
             if (err?.name === "TimeoutError") {
               console.error("[RUN] Meeting ended unexpectedly - timeout");
 
-              this.stopRecording();
+              // Only call endLife (it will call stopRecording internally)
               await this.endLife();
 
               resolve();
@@ -914,7 +923,7 @@ export class ZoomBot extends Bot {
         if (kicked) {
           console.log('[HEALTH] ⚠️  Detected we were kicked from meeting');
           clearInterval(this.healthCheckInterval);
-          await this.stopRecording();
+          // Only call endLife (it will call stopRecording internally)
           await this.endLife();
           return;
         }
@@ -971,22 +980,48 @@ export class ZoomBot extends Bot {
    * Ensure the filestream is closed as well.
    */
   async endLife() {
+    console.log('[CLEANUP] Starting cleanup process...');
 
     // Ensure Recording is stopped in unideal situations
-    this.stopRecording();
+    await this.stopRecording();
 
     // Close File if it exists
     if (this.file) {
-      this.file.close();
-      this.file = null as any;
+      try {
+        this.file.close();
+        this.file = null as any;
+        console.log('[CLEANUP] File stream closed');
+      } catch (error) {
+        console.error('[CLEANUP] Error closing file:', error);
+      }
     }
 
     // Close Browser
     if (this.browser) {
-      await this.browser.close();
+      try {
+        console.log('[CLEANUP] Closing browser...');
+        await this.browser.close();
+        console.log('[CLEANUP] Browser closed successfully');
+      } catch (error) {
+        console.error('[CLEANUP] Error closing browser (non-fatal):', error);
+      }
 
-      // Close the websocket server
-      (await wss).close();
+      // Close the websocket server with timeout
+      try {
+        console.log('[CLEANUP] Closing websocket server...');
+        const wssInstance = await Promise.race([
+          wss,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('WSS timeout')), 5000)
+          )
+        ]);
+        (wssInstance as any).close();
+        console.log('[CLEANUP] Websocket server closed');
+      } catch (error) {
+        console.error('[CLEANUP] Error closing websocket (non-fatal):', error);
+      }
     }
+
+    console.log('[CLEANUP] Cleanup completed');
   }
 }
