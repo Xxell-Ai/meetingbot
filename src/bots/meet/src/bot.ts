@@ -1200,13 +1200,25 @@ export class MeetsBot extends Bot {
       // Check if it's only me in the meeting
       if (this.participants.length === 1) {
 
+        // Initialize timeAloneStarted if this is the first time we detect being alone
+        if (this.timeAloneStarted === Infinity) {
+          this.timeAloneStarted = Date.now();
+          console.log('Detected bot is now alone in the meeting, starting everyone-left timeout timer');
+        }
+
         const leaveMs = this.settings?.automaticLeave?.everyoneLeftTimeout ?? 30000; // Default to 30 seconds if not set
         const msDiff = Date.now() - this.timeAloneStarted;
-        console.log(`Only me left in the meeting. Waiting for timeout time to have allocated (${msDiff / 1000} / ${leaveMs / 1000}s) ...`);
+        console.log(`Only me left in the meeting. Waiting for timeout time to have allocated (${msDiff / 1000}s / ${leaveMs / 1000}s) ...`);
 
         if (msDiff > leaveMs) {
-          console.log('Only one participant remaining for more than alocated time, leaving the meeting.');
+          console.log('Only one participant remaining for more than allocated time, leaving the meeting.');
           break;
+        }
+      } else {
+        // Reset timer if more participants join
+        if (this.timeAloneStarted !== Infinity) {
+          console.log('Other participants joined, resetting everyone-left timeout timer');
+          this.timeAloneStarted = Infinity;
         }
       }
 
