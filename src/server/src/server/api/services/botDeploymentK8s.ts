@@ -236,12 +236,12 @@ export async function deployBotKubernetes({
                   ],
                   resources: {
                     requests: {
-                      cpu: "500m",
-                      memory: "1Gi",
+                      cpu: "1000m", // Increased from 500m to prevent CPU throttling during FFmpeg encoding
+                      memory: "1Gi", // Sufficient for Chrome + FFmpeg + Node.js
                     },
                     limits: {
-                      cpu: "1000m",
-                      memory: "2Gi",
+                      cpu: "2000m", // Increased from 1000m to handle peak loads during participant joins
+                      memory: "2Gi", // Provides headroom for peak memory usage
                     },
                   },
                 },

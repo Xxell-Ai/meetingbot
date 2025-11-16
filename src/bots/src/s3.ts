@@ -97,25 +97,24 @@ export async function uploadRecordingToS3(s3Client: S3Client, bot: Bot, bucketNa
     // Get the original file path
     const originalFilePath = bot.getRecordingPath();
 
-    // Get the everyoneLeftTimeout from bot settings to determine how much to trim
-    const everyoneLeftTimeout = bot.settings.automaticLeave?.everyoneLeftTimeout ?? 0;
-
-    // Trim silent end if timeout is configured
+    // Auto-detect and trim silence from end of recording (>= 1 minute)
     let filePath = originalFilePath;
     let isTrimmed = false;
 
-    if (everyoneLeftTimeout > 0) {
-        console.log(`Trimming ${everyoneLeftTimeout}ms of silence from end of recording`);
-        try {
-            filePath = await trimSilentEnd(originalFilePath, everyoneLeftTimeout);
-            isTrimmed = filePath !== originalFilePath;
-            if (isTrimmed) {
-                console.log(`Using trimmed file: ${filePath}`);
-            }
-        } catch (error) {
-            console.warn("Failed to trim audio, using original file:", error);
-            filePath = originalFilePath;
+    console.log('Auto-detecting and trimming end silence...');
+    try {
+        // Use auto-detect mode (3rd parameter = true)
+        // This will automatically detect silence >= 1 minute at the end
+        filePath = await trimSilentEnd(originalFilePath, 0, true);
+        isTrimmed = filePath !== originalFilePath;
+        if (isTrimmed) {
+            console.log(`✅ Using trimmed file: ${filePath}`);
+        } else {
+            console.log('No trimming needed - no significant end silence detected');
         }
+    } catch (error) {
+        console.warn("Failed to trim audio, using original file:", error);
+        filePath = originalFilePath;
     }
 
     // Attempt to read the file path. Allow for time for the file to become available.

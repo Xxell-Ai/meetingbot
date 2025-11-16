@@ -613,16 +613,22 @@ export class ZoomBot extends Bot {
       // The launch() function loads a browser extension required for getStream() to work
       // Without it, getStream() will timeout after 30 seconds
 
-      console.log('[RECORDING] Creating audio-only stream...');
+      console.log('[RECORDING] Creating audio-only stream with optimized settings...');
 
-      // Changed to audio-only to match Meet bot (smaller files, sufficient for transcription)
+      // IMPROVED: Optimized settings to prevent choppy audio
+      // puppeteer-stream configuration for smooth, high-quality recording
       const stream = await getStream(this.page as any, {
         audio: true,
-        video: false, // Audio-only like Meet bot
-        mimeType: 'audio/webm;codecs=opus', // Audio-only WebM with Opus codec
-        // Optional: startDelay can help with rare ERR_BLOCKED_BY_CLIENT errors (default is 250ms)
-        // Optional: closeDelay can help with rare TargetCloseError issues
-        frameSize: 20 // Reduce frame size for better performance
+        video: false, // Audio-only like Meet bot (smaller files, sufficient for transcription)
+
+        // CRITICAL: Higher bitrate prevents choppy/compressed audio
+        audioBitsPerSecond: 128000, // 128kbps for clear audio (default is much lower)
+
+        // Audio codec optimization
+        mimeType: 'audio/webm;codecs=opus', // Opus codec is efficient and high-quality
+
+        // CRITICAL: Larger frame size reduces CPU overhead and choppiness
+        frameSize: 60, // INCREASED from 20 to reduce processing overhead
       });
 
       this.stream = stream;
@@ -670,6 +676,103 @@ export class ZoomBot extends Bot {
   }
 
   /**
+   * Fix AAC metadata corruption by re-muxing the file
+   * This recalculates duration and fixes corrupted headers
+   * @param inputPath Path to the AAC file
+   * @returns Path to the fixed file (same as input)
+   */
+  private async fixAudioMetadata(inputPath: string): Promise<string> {
+    const outputPath = inputPath.replace('.aac', '_fixed.aac');
+
+    try {
+      console.log('[METADATA FIX] Repairing AAC metadata...');
+
+      const { execSync } = require('child_process');
+
+      // Re-mux the AAC file to fix metadata
+      // -i: input file
+      // -c copy: copy codec without re-encoding (fast)
+      // -movflags +faststart: optimize for streaming
+      // -avoid_negative_ts make_zero: normalize timestamps
+      const command = `ffmpeg -v warning -i "${inputPath}" -c copy -avoid_negative_ts make_zero -movflags +faststart -y "${outputPath}"`;
+
+      console.log(`[METADATA FIX] Running: ${command}`);
+      execSync(command, { stdio: 'pipe' });
+
+      // Verify the output file
+      if (!fs.existsSync(outputPath)) {
+        throw new Error('Metadata fix failed - output file not created');
+      }
+
+      // Get duration to verify fix
+      const durationOutput = execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`,
+        { encoding: 'utf8' }
+      );
+
+      const duration = parseFloat(durationOutput.trim());
+      console.log(`✅ [METADATA FIX] Fixed file duration: ${duration}s (${(duration/60).toFixed(2)} minutes)`);
+
+      // Replace original with fixed version
+      fs.unlinkSync(inputPath);
+      fs.renameSync(outputPath, inputPath);
+
+      console.log('✅ [METADATA FIX] Successfully repaired AAC metadata');
+      return inputPath;
+
+    } catch (error) {
+      console.error('❌ [METADATA FIX] Failed to repair metadata:', error);
+      // Clean up failed output
+      if (fs.existsSync(outputPath)) {
+        fs.unlinkSync(outputPath);
+      }
+      // Return original file
+      return inputPath;
+    }
+  }
+
+  /**
+   * Validate recording metadata to detect corruption
+   * @param filePath Path to the audio file
+   * @param expectedMinDuration Minimum expected duration in seconds
+   * @returns true if metadata looks valid, false if likely corrupt
+   */
+  private async validateRecordingMetadata(filePath: string, expectedMinDuration: number = 60): Promise<boolean> {
+    try {
+      const { execSync } = require('child_process');
+      const durationOutput = execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
+        { encoding: 'utf8' }
+      );
+
+      const duration = parseFloat(durationOutput.trim());
+
+      // Check for obviously corrupt durations
+      if (isNaN(duration)) {
+        console.error(`❌ [VALIDATION] Invalid duration: ${durationOutput}`);
+        return false;
+      }
+
+      if (duration < expectedMinDuration) {
+        console.warn(`⚠️  [VALIDATION] Duration ${duration}s seems too short (expected > ${expectedMinDuration}s)`);
+      }
+
+      // Flag durations over 12 hours as suspicious (likely corrupt)
+      if (duration > 12 * 3600) {
+        console.error(`❌ [VALIDATION] Duration ${duration}s (${(duration/3600).toFixed(1)} hours) is suspiciously long - likely corrupt metadata`);
+        return false;
+      }
+
+      console.log(`✅ [VALIDATION] Duration ${duration}s (${(duration/60).toFixed(2)} minutes) looks valid`);
+      return true;
+
+    } catch (error) {
+      console.error('[VALIDATION] Failed to validate metadata:', error);
+      return false;
+    }
+  }
+
+  /**
    * Convert WebM recording to AAC format using FFmpeg
    */
   private async convertWebMToAAC() {
@@ -690,18 +793,29 @@ export class ZoomBot extends Bot {
       const { execSync } = require('child_process');
 
       // Convert WebM (Opus) to AAC using FFmpeg
+      // IMPROVED: Higher quality settings to preserve audio clarity
       // -i: input file
       // -c:a aac: use AAC codec
-      // -b:a 64k: bitrate 64kbps (good for voice)
-      // -ar 22050: sample rate 22050 Hz (sufficient for voice)
+      // -b:a 96k: INCREASED from 64k for better quality (matches Meet bot)
+      // -ar 44100: INCREASED from 22050 for smoother audio (matches Meet bot)
       // -ac 1: mono audio (voice recordings don't need stereo)
+      // -af aresample=async=1: async resampling for smoother playback
+      // -avoid_negative_ts make_zero: normalize timestamps to prevent metadata corruption
+      // -movflags +faststart: optimize for streaming
       // -y: overwrite output file if exists
-      const command = `ffmpeg -i "${tempWebmPath}" -c:a aac -b:a 64k -ar 22050 -ac 1 -y "${outputAacPath}"`;
+      const command = `ffmpeg -i "${tempWebmPath}" -c:a aac -b:a 96k -ar 44100 -ac 1 -af aresample=async=1 -avoid_negative_ts make_zero -movflags +faststart -y "${outputAacPath}"`;
 
       console.log(`[CONVERT] Running: ${command}`);
       execSync(command, { stdio: 'pipe' });
 
       console.log('✅ [CONVERT] Successfully converted WebM to AAC');
+
+      // Validate and fix metadata if needed
+      const isValid = await this.validateRecordingMetadata(outputAacPath);
+      if (!isValid) {
+        console.log('[CONVERT] Corrupt metadata detected after conversion, attempting repair...');
+        await this.fixAudioMetadata(outputAacPath);
+      }
 
       // Delete temporary WebM file
       fs.unlinkSync(tempWebmPath);

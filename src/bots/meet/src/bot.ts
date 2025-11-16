@@ -149,6 +149,7 @@ export class MeetsBot extends Bot {
   private timeAloneStarted: number = Infinity;
   private lastActivity: number | undefined = undefined;
   private recordingStartedAt: number = 0;
+  private meetingStartedAt: number = 0; // Track when meeting actually started
 
   private ffmpegProcess: ChildProcessWithoutNullStreams | null;
 
@@ -533,7 +534,8 @@ export class MeetsBot extends Bot {
   }
 
   /**
-   * 
+   * Get FFmpeg parameters optimized for smooth, high-quality audio recording
+   * Fixes choppy audio issues caused by buffer underruns and CPU contention
    */
   getFFmpegParams() {
 
@@ -556,27 +558,48 @@ export class MeetsBot extends Bot {
     const audioInputFormat = "pulse";
     const audioSource = "default";
 
-    // Optimized parameters for better audio quality and system stability with AAC
-    const audioBitrate = process.env.AUDIO_BITRATE || "64k"; // 64k is excellent for speech with AAC
-    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "22050"; // 22.05kHz sample rate for better quality
+    // IMPROVED: Optimized parameters to prevent choppy audio
+    const audioBitrate = process.env.AUDIO_BITRATE || "96k"; // Increased from 64k for better quality
+    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "44100"; // Increased from 22050 for smoother audio
     const channels = process.env.AUDIO_CHANNELS || "1"; // Mono - sufficient for speech
-    const threadQueueSize = process.env.THREAD_QUEUE_SIZE || "1024"; // Larger buffer for stability
+    const threadQueueSize = process.env.THREAD_QUEUE_SIZE || "4096"; // INCREASED from 1024 to prevent underruns
+    const bufferSize = process.env.BUFFER_SIZE || "2048k"; // INCREASED from 512k for stability
 
-    console.log(`Audio settings: bitrate=${audioBitrate}, sampleRate=${sampleRate}, channels=${channels}, queueSize=${threadQueueSize}`);
+    console.log(`Audio settings: bitrate=${audioBitrate}, sampleRate=${sampleRate}, channels=${channels}, queueSize=${threadQueueSize}, bufferSize=${bufferSize}`);
 
     return [
       '-v', 'warning', // Less verbose logging to reduce CPU overhead
-      "-thread_queue_size", threadQueueSize, // Larger thread queue for better buffering
-      "-probesize", "32M", // Larger probe size for better stream detection
-      "-analyzeduration", "0", // Skip analysis to start recording faster
+
+      // CRITICAL: Larger thread queue prevents buffer underruns during CPU spikes
+      "-thread_queue_size", threadQueueSize,
+
+      // PulseAudio-specific optimizations
+      "-probesize", "50M", // Increased from 32M for better stream detection
+      "-analyzeduration", "5M", // Changed from 0 to allow better sync (prevents choppy audio)
+
+      // Input configuration
       "-f", audioInputFormat,
       "-i", audioSource,
+
+      // CRITICAL: Use async mode to prevent blocking
+      "-async", "1", // Enables audio sync compensation
+
+      // Codec settings
       "-c:a", "aac", // AAC codec for better compression and quality
-      "-b:a", audioBitrate, // Bitrate for quality (AAC is more efficient than MP3)
+      "-b:a", audioBitrate, // Increased bitrate for smoother audio
       "-ac", channels, // Audio channels
-      "-ar", sampleRate, // Sample rate
-      "-af", "highpass=f=80,lowpass=f=8000", // Audio filters to reduce noise
-      "-buffer_size", "512k", // Increase buffer size
+      "-ar", sampleRate, // Increased sample rate
+
+      // IMPROVED: More gentle audio filtering to preserve quality
+      "-af", "highpass=f=80,lowpass=f=10000,aresample=async=1", // Added async resampling
+
+      // CRITICAL: Larger buffer prevents choppy audio during system load
+      "-buffer_size", bufferSize,
+
+      // Additional stability parameters
+      "-flush_packets", "1", // Flush packets immediately
+      "-fflags", "+genpts+igndts", // Generate PTS, ignore DTS for better sync
+
       "-y", this.getRecordingPath(), // Output file path
     ];
   }
@@ -695,12 +718,109 @@ export class MeetsBot extends Bot {
   }
 
   /**
+   * Fix AAC metadata corruption by re-muxing the file
+   * This recalculates duration and fixes corrupted headers
+   * @param inputPath Path to the AAC file
+   * @returns Path to the fixed file (same as input)
+   */
+  private async fixAudioMetadata(inputPath: string): Promise<string> {
+    const outputPath = inputPath.replace('.aac', '_fixed.aac');
+
+    try {
+      console.log('[METADATA FIX] Repairing AAC metadata...');
+
+      const { execSync } = require('child_process');
+
+      // Re-mux the AAC file to fix metadata
+      // -i: input file
+      // -c copy: copy codec without re-encoding (fast)
+      // -movflags +faststart: optimize for streaming
+      // -avoid_negative_ts make_zero: normalize timestamps
+      const command = `ffmpeg -v warning -i "${inputPath}" -c copy -avoid_negative_ts make_zero -movflags +faststart -y "${outputPath}"`;
+
+      console.log(`[METADATA FIX] Running: ${command}`);
+      execSync(command, { stdio: 'pipe' });
+
+      // Verify the output file
+      if (!fs.existsSync(outputPath)) {
+        throw new Error('Metadata fix failed - output file not created');
+      }
+
+      // Get duration to verify fix
+      const durationOutput = execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`,
+        { encoding: 'utf8' }
+      );
+
+      const duration = parseFloat(durationOutput.trim());
+      console.log(`✅ [METADATA FIX] Fixed file duration: ${duration}s (${(duration/60).toFixed(2)} minutes)`);
+
+      // Replace original with fixed version
+      fs.unlinkSync(inputPath);
+      fs.renameSync(outputPath, inputPath);
+
+      console.log('✅ [METADATA FIX] Successfully repaired AAC metadata');
+      return inputPath;
+
+    } catch (error) {
+      console.error('❌ [METADATA FIX] Failed to repair metadata:', error);
+      // Clean up failed output
+      if (fs.existsSync(outputPath)) {
+        fs.unlinkSync(outputPath);
+      }
+      // Return original file
+      return inputPath;
+    }
+  }
+
+  /**
+   * Validate recording metadata to detect corruption
+   * @param filePath Path to the audio file
+   * @param expectedMinDuration Minimum expected duration in seconds
+   * @returns true if metadata looks valid, false if likely corrupt
+   */
+  private async validateRecordingMetadata(filePath: string, expectedMinDuration: number = 60): Promise<boolean> {
+    try {
+      const { execSync } = require('child_process');
+      const durationOutput = execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
+        { encoding: 'utf8' }
+      );
+
+      const duration = parseFloat(durationOutput.trim());
+
+      // Check for obviously corrupt durations
+      if (isNaN(duration)) {
+        console.error(`❌ [VALIDATION] Invalid duration: ${durationOutput}`);
+        return false;
+      }
+
+      if (duration < expectedMinDuration) {
+        console.warn(`⚠️  [VALIDATION] Duration ${duration}s seems too short (expected > ${expectedMinDuration}s)`);
+      }
+
+      // Flag durations over 12 hours as suspicious (likely corrupt)
+      if (duration > 12 * 3600) {
+        console.error(`❌ [VALIDATION] Duration ${duration}s (${(duration/3600).toFixed(1)} hours) is suspiciously long - likely corrupt metadata`);
+        return false;
+      }
+
+      console.log(`✅ [VALIDATION] Duration ${duration}s (${(duration/60).toFixed(2)} minutes) looks valid`);
+      return true;
+
+    } catch (error) {
+      console.error('[VALIDATION] Failed to validate metadata:', error);
+      return false;
+    }
+  }
+
+  /**
    * Stops the ongoing recording if it has been started.
-   * 
+   *
    * This function ensures that the recording process is terminated. It checks if the `ffmpegProcess`
    * exists and, if so, sends a termination signal to stop the recording. If no recording process
    * is active, it logs a message indicating that no recording was in progress.
-   * 
+   *
    * @returns {Promise<number>} - Returns 0 if the recording was successfully stopped.
    */
   async stopRecording() {
@@ -719,7 +839,7 @@ export class MeetsBot extends Bot {
 
       // Graceful stop
       console.log('Killing ffmpeg process gracefully ...');
-      this.ffmpegProcess.kill('SIGINT'); 
+      this.ffmpegProcess.kill('SIGINT');
       console.log('Waiting for ffmpeg to finish encoding ...');
 
       // Modify the exit handler to resolve the promise.
@@ -733,13 +853,36 @@ export class MeetsBot extends Bot {
           resolve(1);
         }
       });
-  
+
       // Modify the error handler to resolve the promise.
       this.ffmpegProcess.on('error', (err) => {
         console.error('Error while stopping ffmpeg:', err);
         resolve(1);
       });
     });
+
+    // Fix metadata corruption after FFmpeg finishes
+    if (promiseResult === 0) {
+      try {
+        const recordingPath = this.getRecordingPath();
+
+        // Validate metadata first
+        const isValid = await this.validateRecordingMetadata(recordingPath);
+
+        if (!isValid) {
+          console.log('[VALIDATION] Corrupt metadata detected, attempting repair...');
+          await this.fixAudioMetadata(recordingPath);
+
+          // Re-validate after fix
+          const isValidAfterFix = await this.validateRecordingMetadata(recordingPath);
+          if (!isValidAfterFix) {
+            console.error('❌ [VALIDATION] Metadata still corrupt after repair attempt');
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Metadata validation/repair failed, continuing with original file:', error);
+      }
+    }
 
     // Continue
     return promiseResult;
@@ -804,23 +947,38 @@ export class MeetsBot extends Bot {
   }
 
   /**
-   * 
+   * Check if bot is alone in meeting based on participant list
+   * Relies on People Panel data only - no fallback detection methods
+   * @returns true if bot is alone (1 participant), false otherwise
+   */
+  private isAloneInMeeting(): boolean {
+    const alone = this.participants.length === 1;
+    console.log(`[ALONE CHECK] Participant count: ${this.participants.length} - ${alone ? 'ALONE' : 'NOT ALONE'}`);
+    return alone;
+  }
+
+  /**
+   *
    * Meeting actions of the bot.
-   * 
+   *
    * This function performs the actions that the bot is supposed to do in the meeting.
    * It first waits for the people button to be visible, then clicks on it to open the people panel.
    * It then starts recording the meeting and sets up participant monitoring.
-   *  
+   *
    * Afterwards, It enters a simple loop that checks for end meeting conditions every X seconds.
    * Once detected it's done, it stops the recording and exits.
-   * 
+   *
    * @returns 0
    */
   async meetingActions() {
 
+    // Track when meeting started for absolute timeout
+    this.meetingStartedAt = Date.now();
+
     // Start Recording, Yes by default
     console.log("Starting Recording");
     this.startRecording();
+    this.recordingStartedAt = Date.now();
 
     console.log("Waiting for the 'Others might see you differently' popup...");
     await this.handleInfoPopup();
@@ -1197,9 +1355,18 @@ export class MeetsBot extends Bot {
     console.log("Waiting until a leave condition is fulfilled..");
     while (true) {
 
-      // Check if it's only me in the meeting
-      if (this.participants.length === 1) {
+      // Safety check: Absolute maximum meeting duration (3 hours)
+      const maxMeetingDuration = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+      const meetingDuration = Date.now() - this.meetingStartedAt;
+      if (meetingDuration > maxMeetingDuration) {
+        console.warn(`⚠️  Meeting duration exceeded ${maxMeetingDuration / 1000 / 60} minutes - forcing exit for safety`);
+        break;
+      }
 
+      // Check if bot is alone based on participant list (People Panel)
+      const isAlone = this.isAloneInMeeting();
+
+      if (isAlone) {
         // Initialize timeAloneStarted if this is the first time we detect being alone
         if (this.timeAloneStarted === Infinity) {
           this.timeAloneStarted = Date.now();
@@ -1208,16 +1375,16 @@ export class MeetsBot extends Bot {
 
         const leaveMs = this.settings?.automaticLeave?.everyoneLeftTimeout ?? 30000; // Default to 30 seconds if not set
         const msDiff = Date.now() - this.timeAloneStarted;
-        console.log(`Only me left in the meeting. Waiting for timeout time to have allocated (${msDiff / 1000}s / ${leaveMs / 1000}s) ...`);
+        console.log(`Bot detected alone in meeting. Waiting for timeout (${msDiff / 1000}s / ${leaveMs / 1000}s) ...`);
 
         if (msDiff > leaveMs) {
-          console.log('Only one participant remaining for more than allocated time, leaving the meeting.');
+          console.log('Bot alone for more than allocated time, leaving the meeting.');
           break;
         }
       } else {
-        // Reset timer if more participants join
+        // Reset timer if other participants detected
         if (this.timeAloneStarted !== Infinity) {
-          console.log('Other participants joined, resetting everyone-left timeout timer');
+          console.log('Other participants detected, resetting everyone-left timeout timer');
           this.timeAloneStarted = Infinity;
         }
       }
