@@ -515,12 +515,24 @@ export class MeetsBot extends Bot {
     console.log("Awaiting Entry ....");
     const timeout = this.settings.automaticLeave.waitingRoomTimeout; // in milliseconds
 
-    // wait for the leave button to appear (meaning we've joined the meeting)
+    // Wait for admission to the meeting (not just the waiting room)
+    // The People button only appears after being admitted to the actual meeting
     try {
-      await this.page.waitForSelector(leaveButton, {
-        timeout: timeout,
-      });
+      console.log("Waiting to be admitted to the meeting...");
+      await Promise.race([
+        // Strategy 1: Wait for People button (most reliable - only appears in meeting)
+        this.page.waitForSelector(peopleButton, { timeout: timeout }),
+        // Strategy 2: Wait for meeting controls (alternative indicator)
+        this.page.waitForSelector('button[aria-label*="Turn on captions"]', { timeout: timeout }),
+        // Strategy 3: Wait for "Waiting for others to join" message to disappear (means we're in)
+        this.page.waitForFunction(
+          () => !document.body.textContent?.includes("Waiting for the meeting host to let you in"),
+          { timeout: timeout }
+        )
+      ]);
+      console.log("✅ Admitted to meeting - People button or meeting controls detected");
     } catch (e) {
+      console.error("❌ Timeout waiting to be admitted to meeting - still in waiting room");
       // Timeout Error: Will get caught by bot/index.ts
       throw new WaitingRoomTimeoutError();
     }
