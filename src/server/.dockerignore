@@ -1,8 +1,59 @@
+# Environment files
 .env
+.env.*
+!.env.example
+
+# Build artifacts
+.next
+node_modules
+dist
+build
+out
+
+# Docker files
 Dockerfile
 .dockerignore
-node_modules
-npm-debug.log
-README.md
-.next
+
+# Git
 .git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+docs
+
+# Testing
+__tests__
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+coverage
+.jest
+
+# Editor/IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+.editorconfig
+.prettierrc
+.prettierignore
+.eslintrc*
+tsconfig.json
+jest.config.*

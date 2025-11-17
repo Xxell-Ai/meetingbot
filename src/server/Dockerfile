@@ -4,16 +4,14 @@ FROM --platform=linux/amd64 node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
+# Install pnpm globally first (separate layer for better caching)
+RUN npm install -g pnpm@9.12.3
 
-COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml\* ./
+# Copy only dependency files (separate layer to maximize cache hits)
+COPY package.json pnpm-lock.yaml ./
 
-RUN \
-    if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-    elif [ -f package-lock.json ]; then npm ci; \
-    elif [ -f pnpm-lock.yaml ]; then npm install -g pnpm && pnpm i; \
-    else echo "Lockfile not found." && exit 1; \
-    fi
+# Install dependencies with frozen lockfile
+RUN pnpm i --frozen-lockfile
 
 ##### BUILDER
 
@@ -36,17 +34,21 @@ ARG KUBE_NAMESPACE
 ARG DOMAIN_NAME
 
 WORKDIR /app
+
+# Install pnpm in builder stage
+RUN npm install -g pnpm@9.12.3
+
+# Copy node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
+
+# Copy application source
 COPY . .
 
-# ENV NEXT_TELEMETRY_DISABLED 1
+# Disable Next.js telemetry for faster builds
+ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN \
-    if [ -f yarn.lock ]; then SKIP_ENV_VALIDATION=1 yarn build; \
-    elif [ -f package-lock.json ]; then SKIP_ENV_VALIDATION=1 npm run build; \
-    elif [ -f pnpm-lock.yaml ]; then npm install -g pnpm && SKIP_ENV_VALIDATION=1 pnpm run build; \
-    else echo "Lockfile not found." && exit 1; \
-    fi
+# Build with pnpm (simplified since we know it's pnpm-based)
+RUN SKIP_ENV_VALIDATION=1 pnpm run build
 
 ##### RUNNER
 

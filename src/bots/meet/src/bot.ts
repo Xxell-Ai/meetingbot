@@ -854,12 +854,27 @@ export class MeetsBot extends Bot {
       this.ffmpegProcess.kill('SIGINT');
       console.log('Waiting for ffmpeg to finish encoding ...');
 
+      // Set a timeout for forceful termination if graceful stop hangs
+      const forceKillTimeout = setTimeout(() => {
+        if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
+          console.warn('⚠️ FFmpeg did not exit gracefully after 5s, forcing termination with SIGKILL');
+          this.ffmpegProcess.kill('SIGKILL');
+        }
+      }, 5000);
+
       // Modify the exit handler to resolve the promise.
       // This will be called when the video is done encoding
       this.ffmpegProcess.on('exit', (code, signal) => {
-        if (code === 0) {
+        clearTimeout(forceKillTimeout);
+
+        if (code === 0 || code === null) {
+          // code === null means killed by signal (SIGINT), which is expected for graceful stop
           console.log('Recording stopped and file finalized.');
           resolve(0);
+        } else if (code === 255) {
+          // FFmpeg error code 255 often means input source disconnected (e.g., kicked from meeting)
+          console.warn(`⚠️ FFmpeg exited with code 255 - likely audio source disconnected (normal if kicked from meeting)`);
+          resolve(1);
         } else {
           console.error(`FFmpeg exited with code ${code}${signal ? ` and signal ${signal}` : ''}`);
           resolve(1);
@@ -868,32 +883,40 @@ export class MeetsBot extends Bot {
 
       // Modify the error handler to resolve the promise.
       this.ffmpegProcess.on('error', (err) => {
+        clearTimeout(forceKillTimeout);
         console.error('Error while stopping ffmpeg:', err);
         resolve(1);
       });
     });
 
-    // Fix metadata corruption after FFmpeg finishes
-    if (promiseResult === 0) {
-      try {
-        const recordingPath = this.getRecordingPath();
+    // CRITICAL: Always attempt metadata repair, even if FFmpeg crashed
+    // When bot gets kicked or FFmpeg exits abnormally (code 255), headers are often corrupted
+    try {
+      const recordingPath = this.getRecordingPath();
 
-        // Validate metadata first
-        const isValid = await this.validateRecordingMetadata(recordingPath);
-
-        if (!isValid) {
-          console.log('[VALIDATION] Corrupt metadata detected, attempting repair...');
-          await this.fixAudioMetadata(recordingPath);
-
-          // Re-validate after fix
-          const isValidAfterFix = await this.validateRecordingMetadata(recordingPath);
-          if (!isValidAfterFix) {
-            console.error('❌ [VALIDATION] Metadata still corrupt after repair attempt');
-          }
-        }
-      } catch (error) {
-        console.warn('⚠️ Metadata validation/repair failed, continuing with original file:', error);
+      // Check if recording file exists
+      if (!fs.existsSync(recordingPath)) {
+        console.warn('⚠️ Recording file does not exist, skipping metadata repair');
+        return promiseResult;
       }
+
+      // Validate metadata first
+      const isValid = await this.validateRecordingMetadata(recordingPath, 0); // Set min duration to 0 for short recordings
+
+      if (!isValid) {
+        console.log('[VALIDATION] Corrupt metadata detected, attempting repair...');
+        await this.fixAudioMetadata(recordingPath);
+
+        // Re-validate after fix
+        const isValidAfterFix = await this.validateRecordingMetadata(recordingPath, 0);
+        if (!isValidAfterFix) {
+          console.error('❌ [VALIDATION] Metadata still corrupt after repair attempt');
+        } else {
+          console.log('✅ [VALIDATION] Metadata successfully repaired');
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Metadata validation/repair failed, continuing with original file:', error);
     }
 
     // Continue
