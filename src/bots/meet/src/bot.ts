@@ -849,8 +849,8 @@ export class MeetsBot extends Bot {
         return; // exit early
       }
 
-      // Graceful stop
-      console.log('Killing ffmpeg process gracefully ...');
+      // Graceful stop with timeout fallback
+      console.log('Killing ffmpeg process gracefully with SIGINT...');
       this.ffmpegProcess.kill('SIGINT');
       console.log('Waiting for ffmpeg to finish encoding ...');
 

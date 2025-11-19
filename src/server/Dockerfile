@@ -38,6 +38,9 @@ WORKDIR /app
 # Install pnpm in builder stage
 RUN npm install -g pnpm@9.12.3
 
+# Copy package files first
+COPY package.json pnpm-lock.yaml ./
+
 # Copy node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
