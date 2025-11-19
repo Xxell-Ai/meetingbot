@@ -517,22 +517,21 @@ export class MeetsBot extends Bot {
 
     // Wait for admission to the meeting (not just the waiting room)
     // The People button only appears after being admitted to the actual meeting
+    // IMPORTANT: We wait specifically for People button (not captions) because:
+    // 1. We need it anyway for participant tracking in meetingActions()
+    // 2. Avoids circular dependency where we detect admission with one button but need another
+    // 3. Ensures People button is ready when we try to click it later
     try {
       console.log("Waiting to be admitted to the meeting...");
-      await Promise.race([
-        // Strategy 1: Wait for People button (most reliable - only appears in meeting)
-        this.page.waitForSelector(peopleButton, { timeout: timeout }),
-        // Strategy 2: Wait for meeting controls (alternative indicator)
-        this.page.waitForSelector('button[aria-label*="Turn on captions"]', { timeout: timeout }),
-        // Strategy 3: Wait for "Waiting for others to join" message to disappear (means we're in)
-        this.page.waitForFunction(
-          () => !document.body.textContent?.includes("Waiting for the meeting host to let you in"),
-          { timeout: timeout }
-        )
-      ]);
-      console.log("✅ Admitted to meeting - People button or meeting controls detected");
+      console.log("Specifically waiting for People button to ensure it's ready for participant tracking...");
+
+      // Wait for People button with full waiting room timeout
+      await this.page.waitForSelector(peopleButton, { timeout: timeout });
+
+      console.log("✅ Admitted to meeting - People button detected and ready");
     } catch (e) {
       console.error("❌ Timeout waiting to be admitted to meeting - still in waiting room");
+      console.error("People button did not appear within waiting room timeout period");
       // Timeout Error: Will get caught by bot/index.ts
       throw new WaitingRoomTimeoutError();
     }
@@ -855,7 +854,8 @@ export class MeetsBot extends Bot {
       console.log('Waiting for ffmpeg to finish encoding ...');
 
       // Set a timeout for forceful termination if graceful stop hangs
-      const forceKillTimeout = setTimeout(() => {
+      // Use global.setTimeout to avoid conflict with timers/promises import
+      const forceKillTimeout = global.setTimeout(() => {
         if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
           console.warn('⚠️ FFmpeg did not exit gracefully after 5s, forcing termination with SIGKILL');
           this.ffmpegProcess.kill('SIGKILL');
@@ -865,7 +865,7 @@ export class MeetsBot extends Bot {
       // Modify the exit handler to resolve the promise.
       // This will be called when the video is done encoding
       this.ffmpegProcess.on('exit', (code, signal) => {
-        clearTimeout(forceKillTimeout);
+        global.clearTimeout(forceKillTimeout);
 
         if (code === 0 || code === null) {
           // code === null means killed by signal (SIGINT), which is expected for graceful stop
@@ -883,7 +883,7 @@ export class MeetsBot extends Bot {
 
       // Modify the error handler to resolve the promise.
       this.ffmpegProcess.on('error', (err) => {
-        clearTimeout(forceKillTimeout);
+        global.clearTimeout(forceKillTimeout);
         console.error('Error while stopping ffmpeg:', err);
         resolve(1);
       });
@@ -1024,9 +1024,12 @@ export class MeetsBot extends Bot {
       let peopleButtonClicked = false;
 
       // Strategy 1: Try primary People button selector
+      // NOTE: We already waited for this button during admission detection,
+      // so it should be immediately available. Using longer timeout for safety.
       try {
         console.log("STRATEGY 1: Trying primary People button selector...");
-        await this.page.waitForSelector(peopleButton, { timeout: 2000 });
+        console.log("(Button should already be available since we waited for it during admission)");
+        await this.page.waitForSelector(peopleButton, { timeout: 5000 });
         await this.page.click(peopleButton);
         peopleButtonClicked = true;
         console.log("✅ STRATEGY 1 SUCCESS: Primary People button clicked successfully");
