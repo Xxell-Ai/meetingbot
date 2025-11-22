@@ -525,39 +525,37 @@ export class MeetsBot extends Bot {
       console.log("Looking for meeting control buttons to confirm admission...");
 
       // Wait for POSITIVE indicators only - meeting controls that only appear after admission
-      // Do NOT use "waiting room text disappeared" as that can be false positive
+      // Use selector-based detection (NOT waitForFunction - blocked by Google Meet's Trusted Types CSP)
       const admitted = await Promise.race([
-        // Strategy 1: Wait for ANY meeting control button to appear
-        this.page.waitForFunction(
-          () => {
-            // Look for any common meeting control buttons that ONLY appear in meeting
-            const controlButtons = document.querySelectorAll('button[aria-label]');
-            const controlLabels = ['People', 'Chat', 'captions', 'Activities', 'More options', 'Leave call', 'Turn off microphone', 'Turn off camera'];
-
-            for (const button of controlButtons) {
-              const label = button.getAttribute('aria-label') || '';
-              // Must match at least one control label
-              if (controlLabels.some(text => label.toLowerCase().includes(text.toLowerCase()))) {
-                console.log(`Found meeting control: ${label}`);
-                return true;
-              }
-            }
-            return false;
-          },
-          { timeout: timeout, polling: 500 } // Check every 500ms
-        ).then(() => 'controls-appeared'),
-
-        // Strategy 2: Wait for bottom control bar to appear (most reliable)
-        this.page.waitForSelector('[role="toolbar"], [role="menubar"]', {
+        // Strategy 1: Wait for People button (most reliable indicator)
+        this.page.waitForSelector('button[aria-label="People"]', {
           timeout: timeout,
           state: 'visible'
-        }).then(() => 'toolbar-appeared'),
+        }).then(() => 'people-button'),
 
-        // Strategy 3: Wait for video grid to appear (where participant videos show)
-        this.page.waitForSelector('[data-self-name], [data-participant-id]', {
+        // Strategy 2: Wait for Leave call button
+        this.page.waitForSelector('button[aria-label="Leave call"]', {
           timeout: timeout,
           state: 'visible'
-        }).then(() => 'video-grid-appeared')
+        }).then(() => 'leave-button'),
+
+        // Strategy 3: Wait for Chat button
+        this.page.waitForSelector('button[aria-label="Chat"]', {
+          timeout: timeout,
+          state: 'visible'
+        }).then(() => 'chat-button'),
+
+        // Strategy 4: Wait for bottom control bar (toolbar)
+        this.page.waitForSelector('[role="toolbar"]', {
+          timeout: timeout,
+          state: 'visible'
+        }).then(() => 'toolbar'),
+
+        // Strategy 5: Wait for Turn on captions button
+        this.page.waitForSelector('button[aria-label*="captions"]', {
+          timeout: timeout,
+          state: 'visible'
+        }).then(() => 'captions-button')
       ]);
 
       console.log(`✅ Admitted to meeting - detected via: ${admitted}`);
