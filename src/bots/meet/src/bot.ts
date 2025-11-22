@@ -517,59 +517,52 @@ export class MeetsBot extends Bot {
     const timeout = this.settings.automaticLeave.waitingRoomTimeout; // in milliseconds
 
     // Wait for admission to the meeting (not just the waiting room)
-    // Strategy: Wait for waiting room UI to disappear AND meeting controls to appear
+    // Strategy: Wait for POSITIVE indicators that we're in the meeting (meeting controls appearing)
+    // NOT negative indicators (waiting room text disappearing) as those can give false positives
     try {
       console.log("Waiting to be admitted to the meeting...");
+      console.log("Looking for meeting control buttons to confirm admission...");
 
-      // Wait for one of these indicators that we're admitted:
-      // 1. Waiting room message disappears
-      // 2. Any meeting control buttons appear (People, Captions, Chat, etc.)
-      // 3. The meeting UI elements become visible
-
+      // Wait for POSITIVE indicators only - meeting controls that only appear after admission
+      // Do NOT use "waiting room text disappeared" as that can be false positive
       const admitted = await Promise.race([
-        // Strategy 1: Wait for waiting room text to disappear
+        // Strategy 1: Wait for ANY meeting control button to appear
         this.page.waitForFunction(
           () => {
-            const waitingTexts = [
-              "Waiting for the meeting host to let you in",
-              "You're in the waiting room",
-              "Asking to join"
-            ];
-            const bodyText = document.body.textContent || '';
-            return !waitingTexts.some(text => bodyText.includes(text));
-          },
-          { timeout: timeout }
-        ).then(() => 'waiting-room-gone'),
-
-        // Strategy 2: Wait for ANY meeting control button to appear
-        this.page.waitForFunction(
-          () => {
-            // Look for any common meeting control buttons
+            // Look for any common meeting control buttons that ONLY appear in meeting
             const controlButtons = document.querySelectorAll('button[aria-label]');
-            const controlLabels = ['People', 'Chat', 'captions', 'Activities', 'More options', 'Leave call'];
+            const controlLabels = ['People', 'Chat', 'captions', 'Activities', 'More options', 'Leave call', 'Turn off microphone', 'Turn off camera'];
 
             for (const button of controlButtons) {
               const label = button.getAttribute('aria-label') || '';
+              // Must match at least one control label
               if (controlLabels.some(text => label.toLowerCase().includes(text.toLowerCase()))) {
+                console.log(`Found meeting control: ${label}`);
                 return true;
               }
             }
             return false;
           },
-          { timeout: timeout }
+          { timeout: timeout, polling: 500 } // Check every 500ms
         ).then(() => 'controls-appeared'),
 
-        // Strategy 3: Wait for bottom control bar to appear
+        // Strategy 2: Wait for bottom control bar to appear (most reliable)
         this.page.waitForSelector('[role="toolbar"], [role="menubar"]', {
           timeout: timeout,
           state: 'visible'
-        }).then(() => 'toolbar-appeared')
+        }).then(() => 'toolbar-appeared'),
+
+        // Strategy 3: Wait for video grid to appear (where participant videos show)
+        this.page.waitForSelector('[data-self-name], [data-participant-id]', {
+          timeout: timeout,
+          state: 'visible'
+        }).then(() => 'video-grid-appeared')
       ]);
 
       console.log(`✅ Admitted to meeting - detected via: ${admitted}`);
 
       // Give UI a moment to fully render after admission
-      await this.page.waitForTimeout(1000);
+      await this.page.waitForTimeout(2000); // Increased to 2 seconds for UI stability
 
     } catch (e) {
       console.error("❌ Timeout waiting to be admitted to meeting - still in waiting room");
