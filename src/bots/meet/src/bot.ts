@@ -518,44 +518,39 @@ export class MeetsBot extends Bot {
     console.log(`⏱️ Waiting room timeout configured: ${timeout}ms (${timeout/1000} seconds)`);
 
     // Wait for admission to the meeting (not just the waiting room)
-    // Strategy: Wait for POSITIVE indicators that we're in the meeting (meeting controls appearing)
-    // NOT negative indicators (waiting room text disappearing) as those can give false positives
+    // Strategy: Wait for POSITIVE text indicators that ONLY appear after admission
+    // NOT negative indicators (waiting room text disappearing) or buttons that appear in both states
     try {
       console.log("Waiting to be admitted to the meeting...");
-      console.log("Looking for meeting control buttons to confirm admission...");
+      console.log("Looking for admission confirmation text (e.g., 'You've been admitted', 'You're the only one here')...");
 
-      // Wait for POSITIVE indicators only - meeting controls that only appear after admission
-      // Use selector-based detection (NOT waitForFunction - blocked by Google Meet's Trusted Types CSP)
+      // Wait for POSITIVE text indicators that ONLY appear after admission
+      // Based on Recall.ai's proven approach - look for specific text content, not just UI elements
+      // Text-based detection avoids false positives from buttons that appear in waiting room
       const admitted = await Promise.race([
-        // Strategy 1: Wait for People button (most reliable indicator)
-        this.page.waitForSelector('button[aria-label="People"]', {
-          timeout: timeout,
-          state: 'visible'
-        }).then(() => 'people-button'),
+        // Strategy 1: "You've been admitted" text (most reliable - appears when admitted from waiting room)
+        this.page.locator('text="You\'ve been admitted"').waitFor({
+          state: 'visible',
+          timeout: timeout
+        }).then(() => 'admitted-text'),
 
-        // Strategy 2: Wait for Leave call button
-        this.page.waitForSelector('button[aria-label="Leave call"]', {
-          timeout: timeout,
-          state: 'visible'
-        }).then(() => 'leave-button'),
+        // Strategy 2: "You're the only one here" text (appears when bot joins empty meeting)
+        this.page.locator('text="You\'re the only one here"').waitFor({
+          state: 'visible',
+          timeout: timeout
+        }).then(() => 'only-one-here-text'),
 
-        // Strategy 3: Wait for Chat button
-        this.page.waitForSelector('button[aria-label="Chat"]', {
-          timeout: timeout,
-          state: 'visible'
-        }).then(() => 'chat-button'),
+        // Strategy 3: Try variations of the admitted text (Google Meet may change wording)
+        this.page.locator('text=/admitted/i').waitFor({
+          state: 'visible',
+          timeout: timeout
+        }).then(() => 'admitted-text-variation'),
 
-        // Strategy 4: Wait for bottom control bar (toolbar)
+        // Strategy 4: Fallback - Wait for meeting toolbar (less reliable but better than nothing)
         this.page.waitForSelector('[role="toolbar"]', {
           timeout: timeout,
           state: 'visible'
-        }).then(() => 'toolbar'),
-
-        // Strategy 5: Wait for Turn on captions button
-        this.page.waitForSelector('button[aria-label*="captions"]', {
-          timeout: timeout,
-          state: 'visible'
-        }).then(() => 'captions-button')
+        }).then(() => 'toolbar-fallback')
       ]);
 
       console.log(`✅ Admitted to meeting - detected via: ${admitted}`);
