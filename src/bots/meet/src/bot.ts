@@ -515,6 +515,7 @@ export class MeetsBot extends Bot {
     //Should Exit after 1 Minute
     console.log("Awaiting Entry ....");
     const timeout = this.settings.automaticLeave.waitingRoomTimeout; // in milliseconds
+    console.log(`⏱️ Waiting room timeout configured: ${timeout}ms (${timeout/1000} seconds)`);
 
     // Wait for admission to the meeting (not just the waiting room)
     // Strategy: Wait for POSITIVE indicators that we're in the meeting (meeting controls appearing)
@@ -567,6 +568,8 @@ export class MeetsBot extends Bot {
     } catch (e) {
       console.error("❌ Timeout waiting to be admitted to meeting - still in waiting room");
       console.error("No admission indicators detected within timeout period");
+      console.error(`Error details: ${e}`);
+      console.error(`Error message: ${e instanceof Error ? e.message : 'Unknown error'}`);
       // Take screenshot for debugging
       await this.screenshot('admission-timeout.png');
       // Timeout Error: Will get caught by bot/index.ts
