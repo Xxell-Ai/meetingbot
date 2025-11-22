@@ -150,6 +150,7 @@ export class MeetsBot extends Bot {
   private lastActivity: number | undefined = undefined;
   private recordingStartedAt: number = 0;
   private meetingStartedAt: number = 0; // Track when meeting actually started
+  private someoneElseJoined: boolean = false; // Track if anyone besides bot has ever joined
 
   private ffmpegProcess: ChildProcessWithoutNullStreams | null;
 
@@ -516,22 +517,65 @@ export class MeetsBot extends Bot {
     const timeout = this.settings.automaticLeave.waitingRoomTimeout; // in milliseconds
 
     // Wait for admission to the meeting (not just the waiting room)
-    // The People button only appears after being admitted to the actual meeting
-    // IMPORTANT: We wait specifically for People button (not captions) because:
-    // 1. We need it anyway for participant tracking in meetingActions()
-    // 2. Avoids circular dependency where we detect admission with one button but need another
-    // 3. Ensures People button is ready when we try to click it later
+    // Strategy: Wait for waiting room UI to disappear AND meeting controls to appear
     try {
       console.log("Waiting to be admitted to the meeting...");
-      console.log("Specifically waiting for People button to ensure it's ready for participant tracking...");
 
-      // Wait for People button with full waiting room timeout
-      await this.page.waitForSelector(peopleButton, { timeout: timeout });
+      // Wait for one of these indicators that we're admitted:
+      // 1. Waiting room message disappears
+      // 2. Any meeting control buttons appear (People, Captions, Chat, etc.)
+      // 3. The meeting UI elements become visible
 
-      console.log("✅ Admitted to meeting - People button detected and ready");
+      const admitted = await Promise.race([
+        // Strategy 1: Wait for waiting room text to disappear
+        this.page.waitForFunction(
+          () => {
+            const waitingTexts = [
+              "Waiting for the meeting host to let you in",
+              "You're in the waiting room",
+              "Asking to join"
+            ];
+            const bodyText = document.body.textContent || '';
+            return !waitingTexts.some(text => bodyText.includes(text));
+          },
+          { timeout: timeout }
+        ).then(() => 'waiting-room-gone'),
+
+        // Strategy 2: Wait for ANY meeting control button to appear
+        this.page.waitForFunction(
+          () => {
+            // Look for any common meeting control buttons
+            const controlButtons = document.querySelectorAll('button[aria-label]');
+            const controlLabels = ['People', 'Chat', 'captions', 'Activities', 'More options', 'Leave call'];
+
+            for (const button of controlButtons) {
+              const label = button.getAttribute('aria-label') || '';
+              if (controlLabels.some(text => label.toLowerCase().includes(text.toLowerCase()))) {
+                return true;
+              }
+            }
+            return false;
+          },
+          { timeout: timeout }
+        ).then(() => 'controls-appeared'),
+
+        // Strategy 3: Wait for bottom control bar to appear
+        this.page.waitForSelector('[role="toolbar"], [role="menubar"]', {
+          timeout: timeout,
+          state: 'visible'
+        }).then(() => 'toolbar-appeared')
+      ]);
+
+      console.log(`✅ Admitted to meeting - detected via: ${admitted}`);
+
+      // Give UI a moment to fully render after admission
+      await this.page.waitForTimeout(1000);
+
     } catch (e) {
       console.error("❌ Timeout waiting to be admitted to meeting - still in waiting room");
-      console.error("People button did not appear within waiting room timeout period");
+      console.error("No admission indicators detected within timeout period");
+      // Take screenshot for debugging
+      await this.screenshot('admission-timeout.png');
       // Timeout Error: Will get caught by bot/index.ts
       throw new WaitingRoomTimeoutError();
     }
@@ -1172,6 +1216,13 @@ export class MeetsBot extends Bot {
       "onParticipantJoin",
       async (participant: Participant) => {
         this.participants.push(participant);
+
+        // Track that someone besides the bot has joined
+        // participants.length > 1 means bot + at least one other person
+        if (this.participants.length > 1) {
+          this.someoneElseJoined = true;
+        }
+
         await this.onEvent(EventCode.PARTICIPANT_JOIN, participant);
       }
     );
@@ -1408,21 +1459,34 @@ export class MeetsBot extends Bot {
         // Initialize timeAloneStarted if this is the first time we detect being alone
         if (this.timeAloneStarted === Infinity) {
           this.timeAloneStarted = Date.now();
-          console.log('Detected bot is now alone in the meeting, starting everyone-left timeout timer');
+
+          // Determine which timeout to use based on whether anyone else has joined
+          if (this.someoneElseJoined) {
+            console.log('Detected bot is now alone in the meeting (everyone left), starting everyone-left timeout timer');
+          } else {
+            console.log('Detected bot is alone in the meeting (nobody joined), starting no-one-joined timeout timer');
+          }
         }
 
-        const leaveMs = this.settings?.automaticLeave?.everyoneLeftTimeout ?? 30000; // Default to 30 seconds if not set
+        // Use appropriate timeout based on scenario:
+        // - noOneJoinedTimeout: Bot is alone and nobody ever joined
+        // - everyoneLeftTimeout: Bot was with others, but they all left
+        const leaveMs = this.someoneElseJoined
+          ? (this.settings?.automaticLeave?.everyoneLeftTimeout ?? 300000)  // Default 5 minutes
+          : (this.settings?.automaticLeave?.noOneJoinedTimeout ?? 300000);   // Default 5 minutes
+
         const msDiff = Date.now() - this.timeAloneStarted;
-        console.log(`Bot detected alone in meeting. Waiting for timeout (${msDiff / 1000}s / ${leaveMs / 1000}s) ...`);
+        const timeoutType = this.someoneElseJoined ? 'everyone-left' : 'no-one-joined';
+        console.log(`Bot detected alone in meeting (${timeoutType}). Waiting for timeout (${msDiff / 1000}s / ${leaveMs / 1000}s) ...`);
 
         if (msDiff > leaveMs) {
-          console.log('Bot alone for more than allocated time, leaving the meeting.');
+          console.log(`Bot alone for more than allocated time (${timeoutType} timeout), leaving the meeting.`);
           break;
         }
       } else {
         // Reset timer if other participants detected
         if (this.timeAloneStarted !== Infinity) {
-          console.log('Other participants detected, resetting everyone-left timeout timer');
+          console.log('Other participants detected, resetting alone timeout timer');
           this.timeAloneStarted = Infinity;
         }
       }
