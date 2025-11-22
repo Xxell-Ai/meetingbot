@@ -518,39 +518,55 @@ export class MeetsBot extends Bot {
     console.log(`⏱️ Waiting room timeout configured: ${timeout}ms (${timeout/1000} seconds)`);
 
     // Wait for admission to the meeting (not just the waiting room)
-    // Strategy: Wait for POSITIVE text indicators that ONLY appear after admission
-    // NOT negative indicators (waiting room text disappearing) or buttons that appear in both states
+    // Strategy: Wait for meeting UI elements (video grid, participant data) that ONLY exist in active meeting
+    // Multiple strategies race to find the first reliable indicator of being admitted
     try {
       console.log("Waiting to be admitted to the meeting...");
-      console.log("Looking for admission confirmation text (e.g., 'You've been admitted', 'You're the only one here')...");
+      console.log("Looking for meeting UI elements (video grid, participant containers, meeting timer)...");
 
-      // Wait for POSITIVE text indicators that ONLY appear after admission
-      // Based on Recall.ai's proven approach - look for specific text content, not just UI elements
-      // Text-based detection avoids false positives from buttons that appear in waiting room
+      // Wait for meeting UI elements that appear after admission
+      // Strategy: Detect video grid, self-view, or meeting timer that only exist in active meeting
       const admitted = await Promise.race([
-        // Strategy 1: "You've been admitted" text (most reliable - appears when admitted from waiting room)
-        this.page.locator('text="You\'ve been admitted"').waitFor({
-          state: 'visible',
-          timeout: timeout
-        }).then(() => 'admitted-text'),
+        // Strategy 1: Wait for self-view video (your own camera view in the meeting)
+        this.page.waitForSelector('[data-self-name], [data-participant-id*="self"]', {
+          timeout: timeout,
+          state: 'attached'
+        }).then(() => 'self-view-video'),
 
-        // Strategy 2: "You're the only one here" text (appears when bot joins empty meeting)
-        this.page.locator('text="You\'re the only one here"').waitFor({
-          state: 'visible',
-          timeout: timeout
-        }).then(() => 'only-one-here-text'),
-
-        // Strategy 3: Try variations of the admitted text (Google Meet may change wording)
-        this.page.locator('text=/admitted/i').waitFor({
-          state: 'visible',
-          timeout: timeout
-        }).then(() => 'admitted-text-variation'),
-
-        // Strategy 4: Fallback - Wait for meeting toolbar (less reliable but better than nothing)
-        this.page.waitForSelector('[role="toolbar"]', {
+        // Strategy 2: Wait for meeting timer (shows duration like "0:05")
+        this.page.waitForSelector('[data-meeting-timer], [aria-label*="meeting timer"], div[role="timer"]', {
           timeout: timeout,
           state: 'visible'
-        }).then(() => 'toolbar-fallback')
+        }).then(() => 'meeting-timer'),
+
+        // Strategy 3: Wait for participant video grid container
+        this.page.waitForSelector('[data-participant-id], [jsname][data-participant-id]', {
+          timeout: timeout,
+          state: 'attached'
+        }).then(() => 'participant-grid'),
+
+        // Strategy 4: Wait for the main video container that holds all participant videos
+        this.page.waitForSelector('div[jscontroller][jsaction*="participantAdded"]', {
+          timeout: timeout,
+          state: 'attached'
+        }).then(() => 'video-container'),
+
+        // Strategy 5: Check for the absence of waiting room text AND presence of meeting UI
+        (async () => {
+          const startTime = Date.now();
+          while (Date.now() - startTime < timeout) {
+            // Check if waiting room text is gone
+            const waitingTexts = await this.page.locator('text=/waiting|asking to join/i').count();
+            // Check if toolbar is visible (not in waiting room anymore)
+            const hasToolbar = await this.page.locator('[role="toolbar"]').count() > 0;
+
+            if (waitingTexts === 0 && hasToolbar) {
+              return 'waiting-room-gone-and-toolbar-present';
+            }
+            await this.page.waitForTimeout(500);
+          }
+          throw new Error('Timeout waiting for admission');
+        })().then((result) => result)
       ]);
 
       console.log(`✅ Admitted to meeting - detected via: ${admitted}`);
