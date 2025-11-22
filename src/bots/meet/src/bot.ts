@@ -518,58 +518,82 @@ export class MeetsBot extends Bot {
     console.log(`⏱️ Waiting room timeout configured: ${timeout}ms (${timeout/1000} seconds)`);
 
     // Wait for admission to the meeting (not just the waiting room)
-    // Strategy: Wait for meeting UI elements (video grid, participant data) that ONLY exist in active meeting
-    // Multiple strategies race to find the first reliable indicator of being admitted
+    // TWO-PHASE DETECTION to avoid false positives:
+    // Phase 1: Verify we're in waiting room (see waiting room text)
+    // Phase 2: Wait for waiting room text to disappear (= admitted)
     try {
       console.log("Waiting to be admitted to the meeting...");
-      console.log("Looking for meeting UI elements (video grid, participant containers, meeting timer)...");
 
-      // Wait for meeting UI elements that appear after admission
-      // Strategy: Detect video grid, self-view, or meeting timer that only exist in active meeting
-      const admitted = await Promise.race([
-        // Strategy 1: Wait for self-view video (your own camera view in the meeting)
-        this.page.waitForSelector('[data-self-name], [data-participant-id*="self"]', {
-          timeout: timeout,
-          state: 'attached'
-        }).then(() => 'self-view-video'),
+      // PHASE 1: First, confirm we're actually in the waiting room
+      // Look for waiting room specific text that appears ONLY in waiting room
+      const waitingRoomTexts = [
+        'Asking to join',
+        'Waiting for the host to let you in',
+        'Waiting for the meeting host to admit you',
+        "You're in the waiting room",
+        'Waiting for someone to let you in'
+      ];
 
-        // Strategy 2: Wait for meeting timer (shows duration like "0:05")
-        this.page.waitForSelector('[data-meeting-timer], [aria-label*="meeting timer"], div[role="timer"]', {
-          timeout: timeout,
-          state: 'visible'
-        }).then(() => 'meeting-timer'),
+      let inWaitingRoom = false;
+      console.log("Phase 1: Checking if we're in the waiting room...");
 
-        // Strategy 3: Wait for participant video grid container
-        this.page.waitForSelector('[data-participant-id], [jsname][data-participant-id]', {
-          timeout: timeout,
-          state: 'attached'
-        }).then(() => 'participant-grid'),
+      // Check if ANY waiting room text is visible (with short timeout)
+      for (const text of waitingRoomTexts) {
+        try {
+          await this.page.locator(`text="${text}"`).waitFor({
+            state: 'visible',
+            timeout: 2000
+          });
+          inWaitingRoom = true;
+          console.log(`✓ Confirmed in waiting room - found text: "${text}"`);
+          break;
+        } catch (e) {
+          // This text not found, try next
+        }
+      }
 
-        // Strategy 4: Wait for the main video container that holds all participant videos
-        this.page.waitForSelector('div[jscontroller][jsaction*="participantAdded"]', {
-          timeout: timeout,
-          state: 'attached'
-        }).then(() => 'video-container'),
+      if (!inWaitingRoom) {
+        // Not in waiting room - maybe already admitted or no waiting room enabled
+        console.log("⚠️ No waiting room detected - assuming already admitted or waiting room disabled");
+        console.log(`✅ Admitted to meeting - detected via: no-waiting-room`);
+        return 0;
+      }
 
-        // Strategy 5: Check for the absence of waiting room text AND presence of meeting UI
-        (async () => {
-          const startTime = Date.now();
-          while (Date.now() - startTime < timeout) {
-            // Check if waiting room text is gone
-            const waitingTexts = await this.page.locator('text=/waiting|asking to join/i').count();
-            // Check if toolbar is visible (not in waiting room anymore)
-            const hasToolbar = await this.page.locator('[role="toolbar"]').count() > 0;
+      // PHASE 2: Now that we KNOW we're in waiting room, wait for ALL waiting room texts to disappear
+      console.log("Phase 2: Waiting for admission (waiting room text to disappear)...");
+      console.log(`Timeout: ${timeout}ms (${timeout/1000} seconds)`);
 
-            if (waitingTexts === 0 && hasToolbar) {
-              return 'waiting-room-gone-and-toolbar-present';
-            }
-            await this.page.waitForTimeout(500);
+      const startTime = Date.now();
+      const checkInterval = 1000; // Check every 1 second
+
+      while (Date.now() - startTime < timeout) {
+        let anyWaitingTextVisible = false;
+
+        // Check if ANY waiting room text still exists
+        for (const text of waitingRoomTexts) {
+          const count = await this.page.locator(`text="${text}"`).count();
+          if (count > 0) {
+            anyWaitingTextVisible = true;
+            break;
           }
-          throw new Error('Timeout waiting for admission');
-        })().then((result) => result)
-      ]);
+        }
 
-      console.log(`✅ Admitted to meeting - detected via: ${admitted}`);
+        if (!anyWaitingTextVisible) {
+          // All waiting room text is gone - we're admitted!
+          console.log(`✅ Admitted to meeting - detected via: waiting-room-text-disappeared`);
+          break;
+        }
+
+        // Still in waiting room, wait before checking again
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        console.log(`⏳ Still in waiting room... (${elapsed}s / ${timeout/1000}s)`);
+        await this.page.waitForTimeout(checkInterval);
+      }
+
+      // Final check - if we exited the loop due to timeout
+      if (Date.now() - startTime >= timeout) {
+        throw new Error('Timeout waiting for admission');
+      }
 
       // Give UI a moment to fully render after admission
       await this.page.waitForTimeout(2000); // Increased to 2 seconds for UI stability
