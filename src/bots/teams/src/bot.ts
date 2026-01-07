@@ -27,7 +27,19 @@ export class TeamsBot extends Bot {
     super(botSettings, onEvent);
     this.recordingPath = "./recording.webm";
     this.contentType = "video/webm";
-    this.url = `https://teams.microsoft.com/v2/?meetingjoin=true#/l/meetup-join/19:meeting_${this.settings.meetingInfo.meetingId}@thread.v2/0?context=%7b%22Tid%22%3a%22${this.settings.meetingInfo.tenantId}%22%2c%22Oid%22%3a%22${this.settings.meetingInfo.organizerId}%22%7d&anon=true`;
+
+    // Use meetingUrl if provided, otherwise construct from individual fields
+    if (this.settings.meetingInfo.meetingUrl) {
+      // Ensure anon=true parameter is added for anonymous join
+      const url = new URL(this.settings.meetingInfo.meetingUrl);
+      if (!url.searchParams.has('anon')) {
+        url.searchParams.set('anon', 'true');
+      }
+      this.url = url.toString();
+    } else {
+      this.url = `https://teams.microsoft.com/v2/?meetingjoin=true#/l/meetup-join/19:meeting_${this.settings.meetingInfo.meetingId}@thread.v2/0?context=%7b%22Tid%22%3a%22${this.settings.meetingInfo.tenantId}%22%2c%22Oid%22%3a%22${this.settings.meetingInfo.organizerId}%22%7d&anon=true`;
+    }
+
     this.participants = [];
     this.participantsIntervalId = setInterval(() => { }, 0);
   }
