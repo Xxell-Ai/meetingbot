@@ -45,6 +45,14 @@ const infoPopupClick = `//button[.//span[text()="Got it"]]`;
 const SCREEN_WIDTH = 1920;
 const SCREEN_HEIGHT = 1080;
 
+// Fallback name input selectors (Google Meet UI shifts frequently)
+const alternativeNameFields = [
+  'input[aria-label="Your name"]',
+  'input[placeholder="Your name"]',
+  'input[name="name"]',
+  'input[type="text"]',
+];
+
 type Participant = {
   id: string;
   name: string;
@@ -162,7 +170,8 @@ export class MeetsBot extends Bot {
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
   ) {
     super(botSettings, onEvent);
-    this.recordingPath = path.resolve(__dirname, "recording.aac");
+    // Record in a "raw" format; server will handle conversion (e.g. to AAC) and silence removal.
+    this.recordingPath = path.resolve(__dirname, "recording.wav");
 
     this.browserArgs = [
       "--incognito",
@@ -196,8 +205,8 @@ export class MeetsBot extends Bot {
       // Only start recording and meeting actions if join was successful
       await this.meetingActions();
 
-    } catch (error) {
-      console.error("❌ Failed to join meeting:", error.message);
+    } catch (error: any) {
+      console.error("❌ Failed to join meeting:", error?.message ?? error);
       console.log("⚠️ Skipping recording and meeting actions due to join failure");
 
       // Re-throw the error to indicate failure to the main process
@@ -264,7 +273,7 @@ export class MeetsBot extends Bot {
    * @returns {string} - Returns the content type of the recording file.
    */
   getContentType(): string {
-    return "audio/aac";
+    return "audio/wav";
   }
 
   /**
@@ -371,8 +380,8 @@ export class MeetsBot extends Bot {
       } else {
         console.log("❌ SOLUTION 1: Element visible but not enabled");
       }
-    } catch (error) {
-      console.log("❌ SOLUTION 1 FAILED:", error.message);
+    } catch (error: any) {
+      console.log("❌ SOLUTION 1 FAILED:", error?.message ?? error);
     }
 
     // Standard Solution 2: Race condition workaround - wait for attached then visible
@@ -397,8 +406,8 @@ export class MeetsBot extends Bot {
         } else {
           console.log("❌ SOLUTION 2: Element visible but not actionable");
         }
-      } catch (error) {
-        console.log("❌ SOLUTION 2 FAILED:", error.message);
+      } catch (error: any) {
+        console.log("❌ SOLUTION 2 FAILED:", error?.message ?? error);
       }
     }
 
@@ -435,8 +444,8 @@ export class MeetsBot extends Bot {
         if (!foundField) {
           console.log("❌ SOLUTION 3: All polling attempts failed");
         }
-      } catch (error) {
-        console.log("❌ SOLUTION 3 FAILED:", error.message);
+      } catch (error: any) {
+        console.log("❌ SOLUTION 3 FAILED:", error?.message ?? error);
       }
     }
 
@@ -460,8 +469,8 @@ export class MeetsBot extends Bot {
               console.log(`Alternative selector ${selector} found but not interactable (visible: ${isVisible}, enabled: ${isEnabled})`);
             }
           }
-        } catch (error) {
-          console.log(`Alternative selector ${selector} failed: ${error}`);
+        } catch (error: any) {
+          console.log(`Alternative selector ${selector} failed: ${error?.message ?? error}`);
           continue;
         }
       }
@@ -491,14 +500,14 @@ export class MeetsBot extends Bot {
       await this.page.click(muteButton, { timeout: 200 });
       await this.page.waitForTimeout(200);
 
-    } catch (e) {
+    } catch (e: any) {
       console.log('Could not turn off Microphone, probably already off.');
     }
     try {
       await this.page.click(cameraOffButton, { timeout: 200 });
       await this.page.waitForTimeout(200);
 
-    } catch (e) {
+    } catch (e: any) {
       console.log('Could not turn off Camera -- probably already off.');
     }
 
@@ -544,25 +553,25 @@ export class MeetsBot extends Bot {
         '-y',
         '-f', 'lavfi',
         '-i', 'sine=frequency=1000:duration=30', // Generate test audio tone
-        '-c:a', 'aac',
-        '-b:a', '64k',
+        '-c:a', 'pcm_s16le',
+        '-ar', '16000',
+        '-ac', '1',
         this.getRecordingPath()
       ]
     }
 
     // Audio-only recording parameters optimized for reliability and quality
-    console.log('Loading Dockerized FFMPEG Params for Audio-Only Recording (AAC Format) ...')
+    console.log('Loading Dockerized FFMPEG Params for Audio-Only Recording (WAV Format) ...')
 
     const audioInputFormat = "pulse";
     const audioSource = "default";
 
-    // Optimized parameters for better audio quality and system stability with AAC
-    const audioBitrate = process.env.AUDIO_BITRATE || "64k"; // 64k is excellent for speech with AAC
-    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "22050"; // 22.05kHz sample rate for better quality
+    // WAV/PCM output (server will post-process/compress later)
+    const sampleRate = process.env.AUDIO_SAMPLE_RATE || "16000"; // 16kHz is standard for speech
     const channels = process.env.AUDIO_CHANNELS || "1"; // Mono - sufficient for speech
     const threadQueueSize = process.env.THREAD_QUEUE_SIZE || "1024"; // Larger buffer for stability
 
-    console.log(`Audio settings: bitrate=${audioBitrate}, sampleRate=${sampleRate}, channels=${channels}, queueSize=${threadQueueSize}`);
+    console.log(`Audio settings: sampleRate=${sampleRate}, channels=${channels}, queueSize=${threadQueueSize}`);
 
     return [
       '-v', 'warning', // Less verbose logging to reduce CPU overhead
@@ -571,8 +580,7 @@ export class MeetsBot extends Bot {
       "-analyzeduration", "0", // Skip analysis to start recording faster
       "-f", audioInputFormat,
       "-i", audioSource,
-      "-c:a", "aac", // AAC codec for better compression and quality
-      "-b:a", audioBitrate, // Bitrate for quality (AAC is more efficient than MP3)
+      "-c:a", "pcm_s16le", // WAV/PCM audio; server handles compression/transcoding
       "-ac", channels, // Audio channels
       "-ar", sampleRate, // Sample rate
       "-af", "highpass=f=80,lowpass=f=8000", // Audio filters to reduce noise
@@ -615,8 +623,8 @@ export class MeetsBot extends Bot {
         console.warn('⚠️  LOW FREE MEMORY - Consider increasing container memory');
       }
 
-    } catch (error) {
-      console.log('Could not read system resources:', error.message);
+    } catch (error: any) {
+      console.log('Could not read system resources:', error?.message ?? error);
     }
   }
 
@@ -837,29 +845,28 @@ export class MeetsBot extends Bot {
         await this.page.click(peopleButton);
         peopleButtonClicked = true;
         console.log("✅ STRATEGY 1 SUCCESS: Primary People button clicked successfully");
-      } catch (e) {
-        console.log("❌ STRATEGY 1 FAILED: Primary People button selector failed:", e.message);
+      } catch (e: any) {
+        console.log("❌ STRATEGY 1 FAILED: Primary People button selector failed:", e?.message ?? e);
       }
 
       // Strategy 2: Try alternative selectors
       if (!peopleButtonClicked) {
         console.log("STRATEGY 2: Trying alternative People button selectors...");
-        for (let i = 0; i < alternativePeopleSelectors.length; i++) {
-          const selector = alternativePeopleSelectors[i];
+        for (const selector of alternativePeopleSelectors) {
           try {
-            console.log(`STRATEGY 2.${i + 1}: Trying selector: ${selector}`);
+            console.log(`STRATEGY 2: Trying selector: ${selector}`);
             await this.page.waitForSelector(selector, { timeout: 1500 });
             const element = await this.page.$(selector);
             if (element && await element.isVisible() && await element.isEnabled()) {
               await element.click();
               peopleButtonClicked = true;
-              console.log(`✅ STRATEGY 2.${i + 1} SUCCESS: People button clicked with selector: ${selector}`);
+              console.log(`✅ STRATEGY 2 SUCCESS: People button clicked with selector: ${selector}`);
               break;
             } else {
-              console.log(`❌ STRATEGY 2.${i + 1} FAILED: Element not visible/enabled for selector: ${selector}`);
+              console.log(`❌ STRATEGY 2 FAILED: Element not visible/enabled for selector: ${selector}`);
             }
-          } catch (e) {
-            console.log(`❌ STRATEGY 2.${i + 1} FAILED: Selector ${selector} failed:`, e.message);
+          } catch (e: any) {
+            console.log(`❌ STRATEGY 2 FAILED: Selector ${selector} failed:`, e?.message ?? e);
             continue;
           }
         }
@@ -894,19 +901,20 @@ export class MeetsBot extends Bot {
 
           for (let i = 0; i < allCandidates.length; i++) {
             const element = allCandidates[i];
+            if (!element) continue;
 
             // Try multiple levels of parent traversal with null safety
-            let current = element;
+            let current: HTMLElement | null = (element instanceof HTMLElement) ? element : null;
             for (let level = 0; level < 5; level++) {
               if (!current) {
                 break;
               }
               if (current.tagName === 'BUTTON') {
                 try {
-                  current.click();
+                  (current as HTMLButtonElement).click();
                   return true;
-                } catch (e) {
-                  console.log(`Failed to click button at level ${level}:`, e.message);
+                } catch (e: any) {
+                  console.log(`Failed to click button at level ${level}:`, e?.message ?? e);
                 }
               }
               current = current.parentElement;
@@ -916,10 +924,10 @@ export class MeetsBot extends Bot {
             const closestButton = element.closest("button");
             if (closestButton) {
               try {
-                closestButton.click();
+                (closestButton as HTMLButtonElement).click();
                 return true;
-              } catch (e) {
-                console.log(`Failed to click closest button for candidate ${i}:`, e.message);
+              } catch (e: any) {
+                console.log(`Failed to click closest button for candidate ${i}:`, e?.message ?? e);
               }
             }
           }
@@ -942,16 +950,16 @@ export class MeetsBot extends Bot {
             timeout: 5000,
           });
           console.log("People panel is now visible");
-        } catch (e) {
-          console.warn("People panel did not become visible after clicking button:", e.message);
+        } catch (e: any) {
+          console.warn("People panel did not become visible after clicking button:", e?.message ?? e);
         }
       } else {
         console.warn("❌ ALL STRATEGIES FAILED: Could not find People button after trying all methods");
 
         // Check if the people panel might already be open
         const isPanelAlreadyOpen = await this.page.evaluate(() => {
-          const participantsPanel = document.querySelector('[aria-label="Participants"]');
-          return participantsPanel && participantsPanel.offsetParent !== null;
+          const participantsPanel = document.querySelector('[aria-label="Participants"]') as HTMLElement | null;
+          return !!participantsPanel && participantsPanel.offsetParent !== null;
         });
 
         if (isPanelAlreadyOpen) {
@@ -964,8 +972,8 @@ export class MeetsBot extends Bot {
         }
       }
 
-    } catch (error) {
-      console.warn("Could not click People button. Continuing anyways.", error.message);
+    } catch (error: any) {
+      console.warn("Could not click People button. Continuing anyways.", error?.message ?? error);
     }
 
     await this.page.exposeFunction("getParticipants", () => {

@@ -118,12 +118,16 @@ export class TeamsBot extends Bot {
       .fill(this.settings.botDisplayName ?? "Meeting Bot");
     console.log('Entered Display Name');
 
-    // Mute microphone before joining
-    await this.page.locator(`[data-tid="toggle-mute"]`).click();
-    console.log('Muted Microphone');
+    // Mute microphone before joining (optional, don't fail if not found)
+    try {
+      await this.page.locator(`[data-tid="toggle-mute"]`).click({ timeout: 3000 });
+      console.log('Muted Microphone');
+    } catch (e) {
+      console.log('Could not mute microphone (button not found or already muted)');
+    }
 
     // Join the meeting
-    await this.page.locator(`[data-tid="prejoin-join-button"]`).click();
+    await this.page.locator(`[data-tid="prejoin-join-button"]`).click({ timeout: 10000 });
     console.log('Found & Clicked the Join Button');
 
     // Wait until join button is disabled or disappears
@@ -212,9 +216,6 @@ export class TeamsBot extends Bot {
 
     // Start Join
     await this.joinMeeting();
-
-    //Create a File to record to
-    this.file = fs.createWriteStream(this.getRecordingPath());
 
     // Click the people button
     console.log("Opening the participants list");

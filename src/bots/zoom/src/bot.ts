@@ -57,17 +57,16 @@ export class ZoomBot extends Bot {
   stream!: Transform;
   private healthCheckInterval?: NodeJS.Timeout;
   private meetingFrame?: Frame; // Store frame reference to avoid re-querying
-  private recordingStopped: boolean = false; // Flag to prevent multiple stop/convert calls
+  private recordingStopped: boolean = false; // Flag to prevent multiple stop calls
 
   constructor(
     botSettings: BotConfig,
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
   ) {
     super(botSettings, onEvent);
-    // puppeteer-stream outputs WebM, but we convert to AAC after recording
-    // Note: recording.webm is temporary, final output is recording.aac
-    this.recordingPath = path.resolve(__dirname, "recording.aac");
-    this.contentType = "audio/aac";
+    // puppeteer-stream outputs WebM (Opus). Server will handle conversion/transcoding.
+    this.recordingPath = path.resolve(__dirname, "recording.webm");
+    this.contentType = "audio/webm";
     this.url = `https://app.zoom.us/wc/${this.settings.meetingInfo.meetingId}/join?fromPWA=1&pwd=${this.settings.meetingInfo.meetingPassword}`;
   }
 
@@ -120,10 +119,9 @@ export class ZoomBot extends Bot {
     console.log(`[FALLBACK] Searching for ${elementName} with ${selectors.length} fallback selectors`);
 
     // Strategy 1: Try each selector in order
-    for (let i = 0; i < selectors.length; i++) {
-      const selector = selectors[i];
+    for (const selector of selectors) {
       try {
-        console.log(`[FALLBACK] Strategy 1 - Trying selector ${i + 1}/${selectors.length}: ${selector}`);
+        console.log(`[FALLBACK] Strategy 1 - Trying selector: ${selector}`);
         const element = await frame.waitForSelector(selector, { timeout: 2000 });
 
         if (element) {
@@ -137,8 +135,8 @@ export class ZoomBot extends Bot {
             console.log(`⚠️ [FALLBACK] Element found but not ready (visible: ${isVisible}, enabled: ${isEnabled})`);
           }
         }
-      } catch (e) {
-        console.log(`❌ [FALLBACK] Selector ${i + 1} failed: ${selector}`);
+      } catch (e: any) {
+        console.log(`❌ [FALLBACK] Selector failed: ${selector}`);
       }
     }
 
@@ -161,7 +159,7 @@ export class ZoomBot extends Bot {
               return element;
             }
           }
-        } catch (e) {
+        } catch (e: any) {
           // Continue to next selector
         }
       }
@@ -411,7 +409,7 @@ export class ZoomBot extends Bot {
         'iFrame detection'
       );
 
-      frame = await iframe?.contentFrame();
+      frame = (await iframe?.contentFrame()) ?? null;
       console.log("✅ [JOIN] Opened iFrame");
 
       if (!frame) {
@@ -628,13 +626,11 @@ export class ZoomBot extends Bot {
       this.stream = stream;
       console.log('[RECORDING] Stream created successfully');
 
-      // Create and Write the recording to a temporary WebM file first
-      // (will be converted to AAC after recording stops)
-      const tempWebmPath = path.resolve(__dirname, "recording.webm");
-      this.file = fs.createWriteStream(tempWebmPath);
+      // Write recording to WebM file (server will post-process)
+      this.file = fs.createWriteStream(this.recordingPath);
       this.stream.pipe(this.file);
 
-      console.log('✅ [RECORDING] Recording started successfully (saving to temp WebM file)');
+      console.log('✅ [RECORDING] Recording started successfully (saving to WebM file)');
 
     } catch (error) {
       console.error('❌ [RECORDING] Failed to start recording:', error);
@@ -664,57 +660,6 @@ export class ZoomBot extends Bot {
 
     // Wait a bit for file to be fully written
     await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Convert WebM to AAC (only runs once due to flag above)
-    await this.convertWebMToAAC();
-  }
-
-  /**
-   * Convert WebM recording to AAC format using FFmpeg
-   */
-  private async convertWebMToAAC() {
-    const tempWebmPath = path.resolve(__dirname, "recording.webm");
-    const outputAacPath = this.recordingPath; // recording.aac
-
-    try {
-      console.log('[CONVERT] Converting WebM to AAC...');
-      console.log(`[CONVERT] Input: ${tempWebmPath}`);
-      console.log(`[CONVERT] Output: ${outputAacPath}`);
-
-      // Check if WebM file exists
-      if (!fs.existsSync(tempWebmPath)) {
-        console.error('[CONVERT] WebM file not found, skipping conversion');
-        return;
-      }
-
-      const { execSync } = require('child_process');
-
-      // Convert WebM (Opus) to AAC using FFmpeg
-      // -i: input file
-      // -c:a aac: use AAC codec
-      // -b:a 64k: bitrate 64kbps (good for voice)
-      // -ar 22050: sample rate 22050 Hz (sufficient for voice)
-      // -ac 1: mono audio (voice recordings don't need stereo)
-      // -y: overwrite output file if exists
-      const command = `ffmpeg -i "${tempWebmPath}" -c:a aac -b:a 64k -ar 22050 -ac 1 -y "${outputAacPath}"`;
-
-      console.log(`[CONVERT] Running: ${command}`);
-      execSync(command, { stdio: 'pipe' });
-
-      console.log('✅ [CONVERT] Successfully converted WebM to AAC');
-
-      // Delete temporary WebM file
-      fs.unlinkSync(tempWebmPath);
-      console.log('[CONVERT] Cleaned up temporary WebM file');
-
-    } catch (error) {
-      console.error('❌ [CONVERT] Failed to convert WebM to AAC:', error);
-      // If conversion fails, try to at least have the WebM file available
-      if (fs.existsSync(tempWebmPath) && !fs.existsSync(outputAacPath)) {
-        console.log('[CONVERT] Renaming WebM to AAC as fallback');
-        fs.renameSync(tempWebmPath, outputAacPath);
-      }
-    }
   }
 
 
